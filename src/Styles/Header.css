@@ -1,0 +1,93 @@
+/* Import Poppins font */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+
+.sitess {
+    font-family: 'Poppins', sans-serif;
+}
+
+.sitess.left-m {
+    margin-left: 20px;
+    margin-bottom: 20px;
+    font-weight: 600;
+    color: #333;
+}
+
+.font1 {
+    font-family: 'Poppins', sans-serif;
+}
+
+.font2 {
+    font-family: 'Poppins', sans-serif;
+    font-size: 12px;
+}
+
+.sites-container {
+    min-height: 100vh;
+    background: linear-gradient(to bottom, #f8f9fa, #ffffff);
+}
+
+.header-section {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.sites-grid {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.MuiCard-root {
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease-in-out !important;
+}
+
+.MuiCardContent-root {
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.MuiCardMedia-root {
+    transition: opacity 0.3s ease-in-out !important;
+}
+
+@media (max-width: 768px) {
+    .sitess {
+        padding: 16px !important;
+    }
+    
+    .font1 {
+        gap: 20px !important;
+    }
+}
+
+/* Update navbar styles */
+.MuiAppBar-root {
+    font-family: 'Poppins', sans-serif !important;
+}
+
+.MuiToolbar-root {
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+}
+
+/* Update typography for better readability */
+.MuiTypography-root {
+    font-family: 'Poppins', sans-serif !important;
+}
+
+@media (max-width: 768px) {
+    .MuiToolbar-root {
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+    }
+}
+
+/* Optional: Add transition effects */
+.MuiIconButton-root, .MuiTypography-root {
+    transition: opacity 0.2s ease-in-out !important;
+}
+
+.MuiIconButton-root:hover {
+    opacity: 0.7;
+    background-color: transparent !important;
+} 
