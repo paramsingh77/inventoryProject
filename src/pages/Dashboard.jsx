@@ -3,6 +3,8 @@ import { Container, Row, Col, Card } from 'react-bootstrap';
 import { motion } from 'framer-motion';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '../context/ThemeContext';
+import ThemeToggle from '../components/ThemeToggle';
 import {
   faBoxes,
   faUsers,
@@ -11,22 +13,28 @@ import {
   faChartBar
 } from '@fortawesome/free-solid-svg-icons';
 
-const styles = {
+const getStyles = (darkMode) => ({
   container: {
     fontFamily: 'Afacad, sans-serif',
-    padding: '2rem'
+    padding: '2rem',
+    backgroundColor: darkMode ? '#121212' : '#ffffff',
+    minHeight: '100vh'
   },
   title: {
     fontSize: '1.5rem',
     fontWeight: '600',
-    color: '#344767',
+    color: darkMode ? '#ffffff' : '#344767',
     marginBottom: '2rem'
   },
   card: {
     border: 'none',
     cursor: 'pointer',
     height: '100%',
-    transition: 'all 0.3s ease'
+    transition: 'all 0.3s ease',
+    backgroundColor: darkMode ? '#2a2a2a' : '#ffffff',
+    boxShadow: darkMode 
+      ? '0 4px 24px rgba(0, 0, 0, 0.3)'
+      : '0 4px 24px rgba(0, 0, 0, 0.1)',
   },
   icon: {
     fontSize: '2rem',
@@ -35,17 +43,19 @@ const styles = {
   cardTitle: {
     fontSize: '1.25rem',
     fontWeight: '600',
-    color: '#344767',
+    color: darkMode ? '#ffffff' : '#344767',
     marginBottom: '0.5rem'
   },
   cardText: {
     fontSize: '0.875rem',
-    color: '#67748e'
+    color: darkMode ? '#cccccc' : '#67748e'
   }
-};
+});
 
 const DashboardCard = ({ icon, title, description, color, path }) => {
   const navigate = useNavigate();
+  const { darkMode } = useTheme();
+  const styles = getStyles(darkMode);
 
   return (
     <motion.div
@@ -53,7 +63,7 @@ const DashboardCard = ({ icon, title, description, color, path }) => {
       whileTap={{ scale: 0.98 }}
     >
       <Card 
-        className="shadow-sm" 
+        className={`shadow-sm ${darkMode ? 'dark-card' : ''}`}
         style={styles.card}
         onClick={() => navigate(path)}
       >
@@ -63,7 +73,7 @@ const DashboardCard = ({ icon, title, description, color, path }) => {
             style={{ 
               width: '70px', 
               height: '70px',
-              backgroundColor: `${color}20`
+              backgroundColor: darkMode ? `${color}15` : `${color}20`
             }}
           >
             <FontAwesomeIcon 
@@ -82,6 +92,9 @@ const DashboardCard = ({ icon, title, description, color, path }) => {
 };
 
 const Dashboard = () => {
+  const { darkMode } = useTheme();
+  const styles = getStyles(darkMode);
+
   const cards = [
     {
       icon: faBoxes,
@@ -122,6 +135,7 @@ const Dashboard = () => {
 
   return (
     <div style={styles.container}>
+      <ThemeToggle />
       <Container fluid>
         <h4 style={styles.title}>Dashboard</h4>
         <Row className="g-4">
@@ -132,6 +146,23 @@ const Dashboard = () => {
           ))}
         </Row>
       </Container>
+
+      <style jsx="true">{`
+        .dark-card {
+          background-color: #2a2a2a;
+          border: 1px solid #404040;
+        }
+        
+        .dark-card:hover {
+          box-shadow: 0 6px 30px rgba(0, 0, 0, 0.4) !important;
+        }
+
+        @media (prefers-color-scheme: dark) {
+          body {
+            background-color: #121212;
+          }
+        }
+      `}</style>
     </div>
   );
 };

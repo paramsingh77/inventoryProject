@@ -9,18 +9,17 @@ import 'aos/dist/aos.css';
 import logo from '../images/image copy.png';
 import { motion } from 'framer-motion';
 import ThemeToggle from '../components/ThemeToggle';
-import { useTheme } from '../context/ThemeContext';
 // Import Afacad font
 const fontImport = document.createElement('style');
 fontImport.textContent = `@import url('https://fonts.cdnfonts.com/css/afacad');`;
 document.head.appendChild(fontImport);
 
-// Add custom styles for button hover in dark theme
+// Add custom styles for button hover
 const customStyles = document.createElement('style');
 customStyles.textContent = `
     .view-inventory-btn {
-        background-color: #ffffff;
-        color: #000000;
+        background-color: #0071e3;
+        color: white;
         border-radius: 12px;
         padding: 12px;
         font-size: 0.95rem;
@@ -31,58 +30,9 @@ customStyles.textContent = `
     }
     
     .view-inventory-btn:hover {
-        background-color: #e0e0e0 !important;
-        color: #000000 !important;
+        background-color: #000000 !important;
+        color: #ffffff !important;
         transform: scale(1.02);
-    }
-
-    .dark-navbar {
-        background-color: #000000;
-        color: #ffffff;
-    }
-
-    .dark-navbar h1, .dark-navbar .h3 {
-        color: #ffffff;
-    }
-
-    .dark-search-field {
-        background-color: #333333 !important;
-        color: #ffffff !important;
-        border: 1px solid #444444 !important;
-    }
-
-    .dark-search-field::placeholder {
-        color: #999999;
-    }
-
-    .dark-add-btn {
-        background-color: #ffffff !important;
-        color: #000000 !important;
-    }
-
-    .dark-add-btn:hover {
-        background-color: #e0e0e0 !important;
-    }
-
-    .dark-bg {
-        background-color: #121212 !important;
-    }
-
-    .dark-card {
-        background-color: #2a2a2a !important;
-        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3) !important;
-    }
-
-    .dark-title {
-        color: #ffffff !important;
-    }
-
-    .dark-text {
-        color: #cccccc !important;
-    }
-
-    .dark-header {
-        color: #ffffff !important;
     }
 `;
 document.head.appendChild(customStyles);
@@ -97,7 +47,6 @@ const SitesPage = () => {
     const [sites, setSites] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const { darkMode } = useTheme();
 
     useEffect(() => {
         AOS.init({
@@ -173,20 +122,15 @@ const SitesPage = () => {
         { Name: 'Amarillo Specialty Hospital', Location: 'Amarillo', Img: 'https://americanam.org/wp-content/uploads/2024/06/Amarillo-Placeholder-500x400-1.jpg',Avl:'NOT'  },
     ];
 
-    const filteredSites = sites.filter(site => {
-        const matchesSearch = (
-            site.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (site.location && site.location.toLowerCase().includes(searchTerm.toLowerCase()))
-        );
+    const filteredSites = allSites.filter(site => {
+        const matchesSearch = site.Name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (site.Location && site.Location.toLowerCase().includes(searchTerm.toLowerCase()));
         
-        if (user && user.role === 'admin') {
-            // Admin can see all sites that match the search
-            return matchesSearch;
-        } else if (user && user.assigned_location) {
+        if (user && user.assigned_location) {
             // Regular users only see their assigned location
-            return matchesSearch && site.name === user.assigned_location;
+            return matchesSearch && site.Name === user.assigned_location;
         }
-        return false;
+        return false; // If no user or no assigned location, show nothing
     });
 
     const sortedSites = [...filteredSites.filter(site => !site.Avl), ...filteredSites.filter(site => site.Avl)];
@@ -222,8 +166,8 @@ const SitesPage = () => {
 
     if (loading) {
         return (
-            <div className="d-flex justify-content-center align-items-center vh-100 dark-bg">
-                <div className="spinner-border text-light" role="status">
+            <div className="d-flex justify-content-center align-items-center vh-100">
+                <div className="spinner-border text-primary" role="status">
                     <span className="visually-hidden">Loading...</span>
                 </div>
             </div>
@@ -232,7 +176,7 @@ const SitesPage = () => {
 
     if (error) {
         return (
-            <div className="container py-4 dark-bg">
+            <div className="container py-4">
                 <ThemeToggle />
                 <div className="alert alert-danger" role="alert">
                     {error}
@@ -248,10 +192,10 @@ const SitesPage = () => {
     }
 
     return (
-        <div className={`min-vh-100 ${darkMode ? 'dark-bg' : 'bg-light'}`} style={afacadFont}>
+        <div className="bg-light min-vh-100" style={afacadFont}>
             <ThemeToggle />
-            {/* Header Section */}
-            <div className={`${darkMode ? 'dark-navbar' : 'bg-white'} shadow-sm py-3 mb-4`}>
+            {/* Updated Header Section */}
+            <div className="bg-white shadow-sm py-3 mb-4">
                 <div className="container">
                     <div className="row align-items-center g-3">
                         <div className="col-md-6">
@@ -265,7 +209,7 @@ const SitesPage = () => {
                                         width: 'auto'
                                     }} 
                                 />
-                                <h1 className={`h3 mb-0 fw-bold ${darkMode ? 'dark-title' : ''}`} style={afacadFont}>
+                                <h1 className="h3 mb-0 fw-bold" style={afacadFont}>
                                     Facilities
                                 </h1>
                             </div>
@@ -274,34 +218,21 @@ const SitesPage = () => {
                             <div className="position-relative flex-grow-1">
                                 <FontAwesomeIcon 
                                     icon={faSearch} 
-                                    className="position-absolute"
-                                    style={{ 
-                                        left: '15px', 
-                                        top: '12px',
-                                        color: darkMode ? '#999999' : '#6c757d'
-                                    }} 
+                                    className="position-absolute text-muted"
+                                    style={{ left: '15px', top: '12px' }} 
                                 />
                                 <input
                                     type="text"
-                                    className={`form-control form-control-lg ps-5 rounded-pill ${
-                                        darkMode ? 'dark-search-field' : 'border-0 bg-light'
-                                    }`}
+                                    className="form-control form-control-lg ps-5 rounded-pill border-0 bg-light"
                                     placeholder="Search facilities..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    style={{
-                                        ...afacadFont,
-                                        backgroundColor: darkMode ? '#333333' : '#f8f9fa',
-                                        color: darkMode ? '#ffffff' : '#212529',
-                                        border: darkMode ? '1px solid #444444' : 'none',
-                                    }}
+                                    style={afacadFont}
                                 />
                             </div>
                             {user && user.role === 'admin' && (
                                 <button 
-                                    className={`btn ms-3 rounded-pill ${
-                                        darkMode ? 'dark-add-btn' : 'btn-primary'
-                                    }`}
+                                    className="btn btn-primary ms-3 rounded-pill"
                                     onClick={handleAddSite}
                                 >
                                     Add New Facility
@@ -320,14 +251,13 @@ const SitesPage = () => {
                     transition={{ duration: 0.5 }}
                 >
                     <div className="d-flex justify-content-between align-items-center mb-4">
-                        <h1 className={darkMode ? 'dark-header' : ''}>Hospital Sites</h1>
-                        <span className={`badge ${darkMode ? 'bg-light text-dark' : 'bg-primary'}`}>
-                            Total Sites: {filteredSites.length}
-                        </span>
+                        <h1>Hospital Sites</h1>
+                        <span className="badge bg-primary">Total Sites: {sites.length}</span>
                     </div>
                     
+                    {/* Updated to center the cards */}
                     <div className="row g-4 justify-content-center">
-                        {filteredSites.map((site) => (
+                        {sites.map((site) => (
                             <motion.div
                                 key={site.id}
                                 className="col-sm-6 col-lg-4"
@@ -337,13 +267,11 @@ const SitesPage = () => {
                                 whileHover={{ y: -5 }}
                                 style={{ maxWidth: '340px' }}
                             >
-                                <div className={`card h-100 border-0 ${darkMode ? 'dark-card' : ''}`}
+                                <div className="card h-100 border-0" 
                                     style={{ 
                                         borderRadius: '16px',
-                                        backgroundColor: darkMode ? '#2a2a2a' : '#ffffff',
-                                        boxShadow: darkMode 
-                                            ? '0 4px 24px rgba(0, 0, 0, 0.3)'
-                                            : '0 4px 24px rgba(0, 0, 0, 0.1)',
+                                        backgroundColor: '#ffffff',
+                                        boxShadow: '0 4px 24px rgba(0, 0, 0, 0.1)',
                                         transition: 'all 0.3s ease',
                                         width: '100%'
                                     }}
@@ -363,34 +291,45 @@ const SitesPage = () => {
                                                 e.target.src = 'https://via.placeholder.com/400x200?text=No+Image';
                                             }}
                                         />
+                                        {/* <div 
+                                            style={{
+                                                position: 'absolute',
+                                                top: '16px',
+                                                right: '16px',
+                                                padding: '6px 12px',
+                                                borderRadius: '20px',
+                                                backgroundColor: site.is_active ? 'rgba(52, 199, 89, 0.9)' : 'rgba(255, 59, 48, 0.9)',
+                                                color: 'white',
+                                                fontSize: '0.85rem',
+                                                fontWeight: '500',
+                                                backdropFilter: 'blur(8px)',
+                                                WebkitBackdropFilter: 'blur(8px)'
+                                            }}
+                                        >
+                                           ÷ {site.is_active ? 'Active' : 'Inactive'}
+                                        </div> */}
                                     </div>
                                     <div className="card-body p-4">
-                                        <h5 className={`card-title mb-2 ${darkMode ? 'dark-title' : ''}`}
-                                            style={{ 
-                                                fontSize: '1.25rem', 
-                                                fontWeight: '600'
-                                            }}
-                                        >
+                                        <h5 className="card-title mb-2" style={{ 
+                                            fontSize: '1.25rem', 
+                                            fontWeight: '600',
+                                            color: '#1d1d1f'
+                                        }}>
                                             {site.name}
                                         </h5>
-                                        <p className={`card-text mb-3 ${darkMode ? 'dark-text' : 'text-muted'}`}
-                                            style={{ 
-                                                fontSize: '0.95rem',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '6px'
-                                            }}
-                                        >
+                                        <p className="card-text mb-3" style={{ 
+                                            color: '#86868b',
+                                            fontSize: '0.95rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px'
+                                        }}>
                                             <FontAwesomeIcon icon={faMapMarkerAlt} />
                                             {site.location || 'Location not specified'}
                                         </p>
                                         <button 
-                                            className={`view-inventory-btn ${darkMode ? 'dark' : ''}`}
+                                            className="view-inventory-btn"
                                             onClick={() => handleSiteClick(site)}
-                                            style={{
-                                                backgroundColor: darkMode ? '#ffffff' : '#0071e3',
-                                                color: darkMode ? '#000000' : '#ffffff'
-                                            }}
                                         >
                                             View Inventory
                                         </button>
@@ -400,31 +339,15 @@ const SitesPage = () => {
                         ))}
                     </div>
 
-                    {filteredSites.length === 0 && (
+                    {sites.length === 0 && (
                         <div className="text-center py-5">
-                            <h3 className={darkMode ? 'dark-text' : 'text-muted'}>
-                                {searchTerm ? 'No matching sites found' : 'No sites found'}
-                            </h3>
+                            <h3 style={{ color: '#86868b' }}>No sites found</h3>
                         </div>
                     )}
                 </motion.div>
             </div>
-
-            {/* Add these additional styles */}
-            <style jsx="true">{`
-                .dark-search-field::placeholder {
-                    color: #999999;
-                }
-
-                .dark-search-field:focus {
-                    background-color: #333333 !important;
-                    color: #ffffff !important;
-                    border-color: #666666 !important;
-                    box-shadow: 0 0 0 0.25rem rgba(255, 255, 255, 0.1);
-                }
-            `}</style>
         </div>
     );
 };
 
-export default SitesPage;
+export default SitesPage
