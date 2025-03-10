@@ -10,6 +10,10 @@ import { AuthProvider } from './context/AuthContext';
 import Suppliers from './components/Suppliers';
 import Sites from './pages/Sites';
 import InventoryManagement from './pages/InventoryManagement';
+import Inventory from './pages/Inventory';
+import Users from './pages/Users';
+import Reports from './pages/Reports';
+import Settings from './pages/Settings';
 
 function App() {
   return (
@@ -18,16 +22,67 @@ function App() {
         <NotificationProvider>
           <div style={{ fontFamily: 'Afacad, sans-serif' }}>
             <Routes>
+              {/* Public Routes */}
               <Route path="/login" element={<Login />} />
+              
+              {/* Main Site Selection */}
               <Route path="/sites" element={<Sites />} />
+              
+              {/* Generic Routes */}
+              <Route path="/dashboard" element={
+                <MainLayout>
+                  <Dashboard />
+                </MainLayout>
+              } />
+              <Route path="/inventory" element={
+                <MainLayout>
+                  <Inventory />
+                </MainLayout>
+              } />
+              
+              {/* Site-Specific Routes */}
               <Route path="/inventory/:siteName" element={
+                <MainLayout>
+                  <Dashboard />
+                </MainLayout>
+              } />
+              <Route path="/inventory/:siteName/dashboard" element={
+                <MainLayout>
+                  <Dashboard />
+                </MainLayout>
+              } />
+              <Route path="/inventory/:siteName/inventory" element={
                 <MainLayout>
                   <InventoryManagement />
                 </MainLayout>
               } />
-              <Route path="/orders" element={<Orders />} />
-              <Route path="/suppliers" element={<Suppliers />} />
-              <Route path="/dashboard" element={<MainLayout><Dashboard /></MainLayout>} />
+              <Route path="/inventory/:siteName/users" element={
+                <MainLayout>
+                  <Users />
+                </MainLayout>
+              } />
+              <Route path="/inventory/:siteName/orders" element={
+                <MainLayout>
+                  <Orders />
+                </MainLayout>
+              } />
+              <Route path="/inventory/:siteName/suppliers" element={
+                <MainLayout>
+                  <Suppliers />
+                </MainLayout>
+              } />
+              <Route path="/inventory/:siteName/reports" element={
+                <MainLayout>
+                  <Reports />
+                </MainLayout>
+              } />
+              <Route path="/inventory/:siteName/settings" element={
+                <MainLayout>
+                  <Settings />
+                </MainLayout>
+              } />
+              
+              {/* Default Route */}
               <Route path="/" element={<Login />} />
             </Routes>
           </div>

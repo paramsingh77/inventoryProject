@@ -1,0 +1,4 @@
+site_name,device_hostname,device_description,last_user,last_seen,device_type,device_model,operating_system,serial_number,device_cpu,mac_addresses
+Dameron Hospital,DH-LAP-001,Primary Workstation,john.doe,2024-03-20,Laptop,Dell XPS 15,Windows 11,SN12345,Intel i7-12700H,00:1A:2B:3C:4D:5E
+American Advance Management,AAM-DSK-001,Reception Desktop,jane.smith,2024-03-20,Desktop,HP EliteDesk,Windows 10,SN67890,Intel i5-11400,AA:BB:CC:DD:EE:FF
+Phoenix Specialty Hospital,PSH-LAP-002,Emergency Room Laptop,mike.wilson,2024-03-20,Laptop,MacBook Pro,macOS Sonoma,SN11111,M2 Pro,11:22:33:44:55:66 

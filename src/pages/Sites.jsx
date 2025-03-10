@@ -209,14 +209,18 @@ const SitesPage = () => {
     };
 
     const handleSiteClick = (site) => {
-        // Convert site name to URL-friendly format
-        const urlSafeName = site.name
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/(^-|-$)/g, '');
+        // Store this site as the last selected one
+        localStorage.setItem('lastSelectedSite', JSON.stringify({
+            siteName: site.name,
+            siteLocation: site.location || 'No location'
+        }));
         
-        navigate(`/inventory/${urlSafeName}`, { 
-            state: { siteId: site.id, siteName: site.name } 
+        navigate(`/inventory/${site.name}`, { 
+            state: { 
+                siteId: site.id, 
+                siteName: site.name,
+                siteLocation: site.location || 'Location not available'
+            } 
         });
     };
 

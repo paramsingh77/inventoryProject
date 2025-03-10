@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Nav } from 'react-bootstrap';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTheme } from '../../context/ThemeContext';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import TopNav from './TopNav';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
+  faHome,
   faBox,
   faUsers,
   faShoppingCart,
@@ -11,55 +14,124 @@ import {
   faChartLine,
   faCog,
   faAngleRight,
-  faAngleLeft,
-  faHome
+  faAngleLeft
 } from '@fortawesome/free-solid-svg-icons';
-import Dashboard from '../../pages/Dashboard';
-import Inventory from '../../pages/Inventory';
-import Users from '../../pages/Users';
-import Orders from '../../pages/Orders';
-import Suppliers from '../../pages/Suppliers';
-import Reports from '../../pages/Reports';
-import Settings from '../../pages/Settings';
 
-const MainLayout = () => {
+const MainLayout = ({ children }) => {
   const [isExpanded, setIsExpanded] = useState(true);
-  const [activeSection, setActiveSection] = useState('dashboard');
+  const { darkMode } = useTheme();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const params = useParams();
+  const [currentSiteName, setCurrentSiteName] = useState(null);
+  
+  // Extract site name from URL or state
+  useEffect(() => {
+    // First check URL params
+    if (params.siteName) {
+      setCurrentSiteName(params.siteName);
+    } 
+    // Then check location state
+    else if (location.state && location.state.siteName) {
+      setCurrentSiteName(location.state.siteName);
+    }
+    // Finally check localStorage
+    else {
+      const lastSelectedSite = localStorage.getItem('lastSelectedSite');
+      if (lastSelectedSite) {
+        try {
+          const siteData = JSON.parse(lastSelectedSite);
+          setCurrentSiteName(siteData.siteName);
+        } catch (e) {
+          console.error("Error parsing stored site data:", e);
+        }
+      }
+    }
+  }, [params, location]);
 
-  const menuItems = [
-    { id: 'dashboard', icon: faHome, label: 'Dashboard', component: Dashboard },
-    { id: 'inventory', icon: faBox, label: 'Inventory', component: Inventory },
-    { id: 'users', icon: faUsers, label: 'Users', component: Users },
-    { id: 'orders', icon: faShoppingCart, label: 'Orders', component: Orders },
-    { id: 'suppliers', icon: faTruck, label: 'Suppliers', component: Suppliers },
-    { id: 'reports', icon: faChartLine, label: 'Reports', component: Reports },
-    { id: 'settings', icon: faCog, label: 'Settings', component: Settings }
-  ];
+  // Generate menu items with dynamic paths based on current site
+  const getMenuItems = () => {
+    // If no site is selected, use static paths
+    if (!currentSiteName) {
+      return [
+        { path: '/dashboard', icon: faHome, label: 'Dashboard' },
+        { path: '/inventory', icon: faBox, label: 'Inventory' },
+        { path: '/users', icon: faUsers, label: 'Users' },
+        { path: '/orders', icon: faShoppingCart, label: 'Orders' },
+        { path: '/suppliers', icon: faTruck, label: 'Suppliers' },
+        { path: '/reports', icon: faChartLine, label: 'Reports' },
+        { path: '/settings', icon: faCog, label: 'Settings' }
+      ];
+    }
+    
+    // With site context, use site-specific paths
+    return [
+      { path: `/inventory/${currentSiteName}/dashboard`, icon: faHome, label: 'Dashboard' },
+      { path: `/inventory/${currentSiteName}/inventory`, icon: faBox, label: 'Inventory' },
+      { path: `/inventory/${currentSiteName}/users`, icon: faUsers, label: 'Users' },
+      { path: `/inventory/${currentSiteName}/orders`, icon: faShoppingCart, label: 'Orders' },
+      { path: `/inventory/${currentSiteName}/suppliers`, icon: faTruck, label: 'Suppliers' },
+      { path: `/inventory/${currentSiteName}/reports`, icon: faChartLine, label: 'Reports' },
+      { path: `/inventory/${currentSiteName}/settings`, icon: faCog, label: 'Settings' }
+    ];
+  };
+  
+  const menuItems = getMenuItems();
+  
+  // Get the current section from the URL path
+  const getCurrentSection = () => {
+    const pathParts = location.pathname.split('/');
+    // If we're in a site-specific route, the section is the last part
+    if (pathParts.length >= 3 && pathParts[1] === 'inventory') {
+      return pathParts[pathParts.length - 1];
+    }
+    // Otherwise, use the first path segment
+    return pathParts[1] || 'dashboard';
+  };
 
-  const ActiveComponent = menuItems.find(item => item.id === activeSection)?.component || Dashboard;
+  // Check if a path is active based on the current URL
+  const isActivePath = (path) => {
+    // For site-specific paths, match the last segment
+    if (path.includes('/inventory/') && location.pathname.includes('/inventory/')) {
+      const pathSegments = path.split('/');
+      const currentSegments = location.pathname.split('/');
+      
+      // Match the last segment (the section)
+      const pathSection = pathSegments[pathSegments.length - 1];
+      const currentSection = currentSegments[currentSegments.length - 1];
+      
+      return pathSection === currentSection;
+    }
+    
+    // For general paths, direct match
+    return location.pathname === path;
+  };
 
   return (
-    <div className="d-flex">
+    <div className={`d-flex ${darkMode ? 'dark-theme' : ''}`}>
       {/* Sidebar */}
       <motion.div
         initial={{ width: 240 }}
         animate={{ width: isExpanded ? 240 : 70 }}
-        className="bg-white border-end vh-100 position-fixed"
-        style={{ zIndex: 1030 }}
+        className={`vh-100 position-fixed ${darkMode ? 'bg-black' : 'bg-white'}`}
+        style={{ 
+          zIndex: 1030,
+          borderRight: darkMode ? '1px solid #2a2a2a' : '1px solid #e5e5e5'
+        }}
       >
         <div className="d-flex flex-column h-100">
           {/* Logo Area */}
-          <div className="p-3 border-bottom d-flex justify-content-between align-items-center">
+          <div className={`p-3 border-bottom d-flex justify-content-between align-items-center ${darkMode ? 'border-dark' : ''}`}>
             <motion.h5 
               initial={{ opacity: 1 }}
               animate={{ opacity: isExpanded ? 1 : 0 }}
-              className="m-0 fw-bold"
+              className={`m-0 fw-bold ${darkMode ? 'text-white' : ''}`}
               style={{ fontFamily: 'Afacad, sans-serif' }}
             >
-              AAM Inventory
+              {currentSiteName ? currentSiteName : 'AAM Inventory'}
             </motion.h5>
             <button
-              className="btn btn-light btn-sm rounded-circle"
+              className={`btn ${darkMode ? 'btn-dark' : 'btn-light'} btn-sm rounded-circle`}
               onClick={() => setIsExpanded(!isExpanded)}
             >
               <FontAwesomeIcon icon={isExpanded ? faAngleLeft : faAngleRight} />
@@ -70,21 +142,30 @@ const MainLayout = () => {
           <Nav className="flex-column p-3 gap-2">
             {menuItems.map((item) => (
               <motion.div
-                key={item.id}
+                key={item.path}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
                 <Nav.Link
-                  onClick={() => setActiveSection(item.id)}
+                  onClick={() => navigate(item.path)}
                   className={`rounded-3 d-flex align-items-center ${
-                    activeSection === item.id ? 'bg-light' : ''
+                    isActivePath(item.path) 
+                      ? 'bg-secondary text-white' 
+                      : darkMode ? 'text-light' : ''
                   }`}
+                  style={{
+                    backgroundColor: isActivePath(item.path) ? '#444444' : '',
+                    fontWeight: isActivePath(item.path) ? 'bold' : 'normal'
+                  }}
                 >
-                  <FontAwesomeIcon icon={item.icon} className="text-secondary" />
+                  <FontAwesomeIcon 
+                    icon={item.icon} 
+                    className={isActivePath(item.path) ? 'text-white' : darkMode ? 'text-light' : 'text-secondary'} 
+                  />
                   <motion.span
                     initial={{ opacity: 1 }}
                     animate={{ opacity: isExpanded ? 1 : 0 }}
-                    className="ms-3 text-black"
+                    className={`ms-3 ${isActivePath(item.path) ? 'text-white' : darkMode ? 'text-light' : 'text-black'}`}
                   >
                     {item.label}
                   </motion.span>
@@ -96,39 +177,69 @@ const MainLayout = () => {
       </motion.div>
 
       {/* Main Content */}
-      <div style={{ marginLeft: isExpanded ? '240px' : '70px', width: '100%' }}>
+      <div style={{ 
+        marginLeft: isExpanded ? '240px' : '70px', 
+        width: '100%',
+        backgroundColor: darkMode ? '#121212' : '#ffffff'
+      }}>
         <TopNav />
         <AnimatePresence mode="wait">
           <motion.div
-            key={activeSection}
+            key={location.pathname}
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.2 }}
-            className="workspace-window bg-white"
+            className={`workspace-window`}
             style={{
               margin: '20px',
               borderRadius: '12px',
-              minHeight: 'calc(100vh - 100px)',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+              minHeight: '70vh',
+              height: 'fit-content',
+              backgroundColor: darkMode ? '#121212' : '#ffffff',
+              boxShadow: darkMode 
+                ? '0 4px 12px rgba(0,0,0,0.3)'
+                : '0 4px 12px rgba(0,0,0,0.05)'
             }}
           >
-            <div className="window-header p-3 border-bottom d-flex align-items-center">
+            <div className={`window-header p-3 border-bottom d-flex align-items-center ${
+              darkMode ? 'border-dark' : ''
+            }`}>
               <div className="me-2 d-flex gap-2">
                 <span className="rounded-circle" style={{ width: 12, height: 12, backgroundColor: '#ff5f57' }}></span>
                 <span className="rounded-circle" style={{ width: 12, height: 12, backgroundColor: '#febc2e' }}></span>
                 <span className="rounded-circle" style={{ width: 12, height: 12, backgroundColor: '#28c840' }}></span>
               </div>
-              <small className="text-secondary ms-2">
-                {menuItems.find(item => item.id === activeSection)?.label || 'Dashboard'}
+              <small className={`ms-2 ${darkMode ? 'text-light' : 'text-secondary'}`}>
+                {getCurrentSection().charAt(0).toUpperCase() + getCurrentSection().slice(1)}
               </small>
             </div>
             <div className="window-content p-4">
-              <ActiveComponent />
+              {children}
             </div>
           </motion.div>
         </AnimatePresence>
       </div>
+
+      <style jsx="true">{`
+        .dark-theme {
+          background-color: #121212;
+        }
+        
+        .dark-theme .nav-link:hover {
+          background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .nav-link.active, .nav-link.active:hover {
+          background-color: #444444 !important;
+          color: #000000 !important;
+        }
+
+        .dark-theme .window-header {
+          background-color: #121212;
+          border-bottom: 1px solid #2a2a2a;
+        }
+      `}</style>
     </div>
   );
 };

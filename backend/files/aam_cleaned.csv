@@ -1,0 +1,6 @@
+site_name,device_hostname,device_description,last_user,last_seen,device_type,device_model,operating_system,serial_number,device_cpu,mac_addresses
+AAM,AAMDT431,CVSHDT431,CVSH\cb30357,2/3/2025 23:51,Desktop,OptiPlex 7010,Microsoft Windows 10 Pro 10.0.19045,9GWNSW1,Intel(R) Core(TM) i5-3570 CPU @ 3.40GHz,90:B1:1C:9D:12:A6
+AAM,AAMDT405,CVSHDT405,CVSH\db30324,3/5/2025 22:05,Desktop,HP Compaq Pro 6300 SFF,Microsoft Windows 10 Pro 10.0.19045,MXL3331DV1,Intel(R) Core(TM) i5-3470 CPU @ 3.20GHz,74:46:A0:A8:A3:CF
+AAM,AAMDT492,CVSHDT492,CVSH\tammy.thompson,2/25/2025 13:29,Desktop,OptiPlex 3020,Microsoft Windows 11 Pro 10.0.22000,6QN7N02,Intel(R) Core(TM) i5-4570 CPU @ 3.20GHz,F8:BC:12:57:0F:46
+AAM,Tammy-Home,TAMMY-HOME,TAMMY-HOME\Tammy,2/11/2025 22:18,Desktop,XPS 8930,Microsoft Windows 11 Pro 10.0.26100,B1CR0S2,Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz,B8:85:84:A6:E2:CA|80:2B:F9:67:18:0F|80:2B:F9:67:18:10
+AAM,DESKTOP-JC4M8LH,John,DESKTOP-JC4M8LH\John,3/5/2025 16:12,Laptop,20TDS06700,Microsoft Windows 11 Pro 10.0.22631,PF3DV2GK,11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz,84:14:4D:B7:83:92|00:09:0F:FE:00:01|84:A9:38:DF:FC:7E|00:FF:48:3E:29:96 

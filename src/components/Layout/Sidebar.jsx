@@ -15,12 +15,12 @@ const Sidebar = () => {
   const navigate = useNavigate();
 
   const menuItems = [
-    { path: '/inventory', icon: faBox, label: 'Inventory' },
-    { path: '/users', icon: faUsers, label: 'Users' },
-    { path: '/orders', icon: faShoppingCart, label: 'Orders' },
-    { path: '/suppliers', icon: faTruck, label: 'Suppliers' },
-    { path: '/reports', icon: faChartLine, label: 'Reports' },
-    { path: '/settings', icon: faCog, label: 'Settings' },
+    { path: '/inventory', icon: faBox},
+    { path: '/users', icon: faUsers},
+    { path: '/orders', icon: faShoppingCart},
+    { path: '/suppliers', icon: faTruck },
+    { path: '/reports', icon: faChartLine},
+    { path: '/settings', icon: faCog },
   ];
 
   return (
