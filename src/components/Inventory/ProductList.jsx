@@ -14,7 +14,12 @@ import {
   faShieldAlt,
   faHistory,
   faFileAlt,
-  faDesktop
+  faDesktop,
+  faServer,
+  faArrowUp,
+  faExclamationTriangle,
+  faShoppingCart,
+  faSync
 } from '@fortawesome/free-solid-svg-icons';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
@@ -175,25 +180,298 @@ const AnalyticsModal = ({ show, onHide, devices }) => {
     }
   };
 
+  // Calculate dashboard metrics
+  const getDashboardMetrics = (allDevices) => {
+    const totalDevices = allDevices.length;
+    
+    // Calculate active devices (seen in last 24 hours)
+    const activeDevices = allDevices.filter(device => {
+      const status = getDeviceStatus(device.last_seen);
+      return status === 'online' || status === 'recently-active';
+    }).length;
+    
+    // Calculate offline devices (not seen in over 7 days)
+    const offlineDevices = getDevicesNotSeenInDays(allDevices, 7).length;
+    
+    // Calculate devices needing updates
+    const pendingUpdates = getOutdatedOSDevices(allDevices).length;
+    
+    // Calculate recent activity (devices with activity in last 72 hours)
+    const recentActivity = allDevices.filter(device => {
+      if (device.last_seen === 'Currently Online') return true;
+      
+      try {
+        if (!device.last_seen) return false;
+        const lastSeen = new Date(device.last_seen);
+        const now = new Date();
+        const hoursDiff = Math.abs(now - lastSeen) / 36e5; // Convert ms to hours
+        return hoursDiff <= 72;
+      } catch (e) {
+        return false;
+      }
+    }).length;
+    
+    return {
+      totalDevices,
+      activeDevices,
+      offlineDevices,
+      pendingUpdates,
+      recentActivity
+    };
+  };
+
   return (
     <Modal 
       show={show} 
       onHide={onHide} 
       size="xl" 
       centered
+      dialogClassName="analytics-modal-dialog"
+      contentClassName="analytics-modal-content"
       className={`analytics-modal ${darkMode ? 'dark-mode' : ''}`}
     >
+      <style>
+        {`
+          @import url('https://fonts.googleapis.com/css2?family=Afacad:wght@300;400;500;600;700&display=swap');
+          
+          .analytics-modal * {
+            font-family: 'Afacad', sans-serif !important;
+          }
+          
+          .analytics-modal-dialog {
+            max-width: 90%;
+            margin: 1.75rem auto;
+          }
+          
+          .analytics-modal-content {
+            border-radius: 1rem;
+            border: ${darkMode ? '1px solid #444' : '1px solid #dee2e6'};
+            overflow: visible !important;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+          }
+          
+          .modal-body {
+            max-height: none !important;
+            overflow: visible !important;
+            padding: 0 !important;
+          }
+          
+          .table-responsive {
+            overflow: visible !important;
+          }
+          
+          /* Aceternity-inspired table styling */
+          .table {
+            border-collapse: separate;
+            border-spacing: 0;
+            width: 100%;
+          }
+          
+          .table th {
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
+            padding: 1rem;
+            border-bottom: 1px solid ${darkMode ? '#444' : '#e9ecef'};
+            color: ${darkMode ? '#aaa' : '#6c757d'};
+            background: ${darkMode ? '#222' : '#f8f9fa'};
+            transition: all 0.2s ease;
+          }
+          
+          .table td {
+            padding: 1rem;
+            border-bottom: 1px solid ${darkMode ? '#333' : '#f0f0f0'};
+            transition: all 0.2s ease;
+          }
+          
+          .table tbody tr {
+            background: ${darkMode ? '#1a1a1a' : 'white'};
+            transition: all 0.2s ease;
+          }
+          
+          .table tbody tr:hover {
+            background: ${darkMode ? '#222' : '#f8f9fa'};
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+          }
+          
+          /* Cards with Aceternity styling */
+          .card {
+            border-radius: 1rem;
+            border: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, ${darkMode ? '0.15' : '0.05'});
+            transition: all 0.3s ease;
+            overflow: hidden;
+            backdrop-filter: blur(5px);
+          }
+          
+          .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, ${darkMode ? '0.25' : '0.1'});
+          }
+          
+          .card-body {
+            padding: 1.5rem;
+          }
+          
+          /* Badge styling */
+          .badge {
+            font-weight: normal;
+            padding: 0.5rem 0.8rem;
+            border-radius: 30px;
+            font-size: 0.8rem;
+            letter-spacing: 0.3px;
+            text-transform: capitalize;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+          }
+          
+          /* Tab styling */
+          .analytics-tabs {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: ${darkMode ? 'rgba(26, 26, 26, 0.9)' : 'rgba(248, 249, 250, 0.9)'};
+            backdrop-filter: blur(8px);
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid ${darkMode ? '#333' : '#dee2e6'};
+          }
+          
+          .nav-pills .nav-link {
+            border-radius: 30px;
+            padding: 0.6rem 1.2rem;
+            font-weight: 500;
+            font-size: 0.9rem;
+            letter-spacing: 0.3px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid transparent;
+          }
+          
+          .nav-pills .nav-link:hover {
+            transform: translateY(-2px);
+          }
+          
+          .nav-pills .nav-link.active {
+            background: ${darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(13, 110, 253, 0.1)'};
+            color: ${darkMode ? 'white' : '#0d6efd'};
+            border: 1px solid ${darkMode ? 'rgba(255, 255, 255, 0.2)' : 'rgba(13, 110, 253, 0.2)'};
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+          }
+          
+          /* Content section */
+          .content-section {
+            padding: 2rem;
+          }
+          
+          .card-spacing {
+            margin-bottom: 2.5rem;
+          }
+          
+          /* Buttons */
+          .btn {
+            border-radius: 30px;
+            padding: 0.6rem 1.5rem;
+            font-weight: 500;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+          }
+          
+          .btn:before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 0;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            z-index: 0;
+          }
+          
+          .btn:hover:before {
+            width: 100%;
+          }
+          
+          .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          }
+          
+          /* Form controls */
+          .form-control {
+            border-radius: 0.5rem;
+            padding: 0.7rem 1rem;
+            border: 1px solid ${darkMode ? '#444' : '#dee2e6'};
+            background-color: ${darkMode ? '#222' : 'white'};
+            color: ${darkMode ? '#e0e0e0' : 'inherit'};
+            transition: all 0.2s ease;
+          }
+          
+          .form-control:focus {
+            border-color: ${darkMode ? '#666' : '#b0c4de'};
+            box-shadow: 0 0 0 0.25rem ${darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(13, 110, 253, 0.15)'};
+          }
+          
+          /* Dark mode specific */
+          .dark-mode .bg-dark {
+            background-color: #121212 !important;
+          }
+          
+          .dark-mode .text-muted {
+            color: #aaaaaa !important;
+          }
+          
+          /* Modal header and footer */
+          .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid ${darkMode ? '#333' : '#dee2e6'};
+          }
+          
+          .modal-footer {
+            padding: 1.5rem;
+            border-top: 1px solid ${darkMode ? '#333' : '#dee2e6'};
+          }
+          
+          /* Close button */
+          .btn-close {
+            opacity: 0.7;
+            transition: all 0.3s ease;
+          }
+          
+          .btn-close:hover {
+            opacity: 1;
+            transform: rotate(90deg);
+          }
+          
+          /* Icon styling */
+          .fa-icon-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            margin-right: 1rem;
+          }
+        `}
+      </style>
+      
       <Modal.Header closeButton className={darkMode ? 'bg-dark text-white border-secondary' : ''}>
         <Modal.Title className="d-flex align-items-center">
-          <FontAwesomeIcon icon={faChartLine} className="me-2" />
+          <div className={`fa-icon-wrapper bg-primary bg-opacity-10`}>
+            <FontAwesomeIcon icon={faChartLine} className="text-primary" />
+          </div>
           <span className="fw-bold">Inventory Analytics Dashboard</span>
         </Modal.Title>
       </Modal.Header>
-      <Modal.Body className={`p-0 ${darkMode ? 'bg-dark text-white' : 'bg-light'}`} style={{ maxHeight: '80vh', overflowY: 'auto' }}>
+      <Modal.Body className={`${darkMode ? 'bg-dark text-white' : 'bg-light'}`}>
         <Nav 
           variant="pills" 
-          className="p-3 gap-2 border-bottom"
-          style={{ backgroundColor: darkMode ? '#1a1a1a' : '#f8f9fa' }}
+          className="analytics-tabs"
         >
           {[
             { id: 'site-summary', label: 'Site Summary', icon: faBuilding },
@@ -208,14 +486,22 @@ const AnalyticsModal = ({ show, onHide, devices }) => {
               initial="hidden"
               animate="visible"
             >
-               <Nav.Link 
-        active={activeTab === tab.id} 
+             <Nav.Link 
+        active={false} // Override Bootstrap's built-in active styling
         onClick={() => setActiveTab(tab.id)} 
-        className={`d-flex align-items-center gap-2 px-4 py-2 rounded-pill ${
-          darkMode 
-            ? 'text-light ' + (activeTab === tab.id ? 'bg-primary text-white' : 'bg-dark') 
-            : activeTab === tab.id ? 'bg-primary text-white' : ''
-        }`}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          padding: '0.5rem 1.5rem',
+          borderRadius: '50px',
+          backgroundColor: activeTab === tab.id 
+            ? '#4a90e2' // Custom blue color for active tab
+            : darkMode ? '#1a1a1a' : 'transparent',
+          color: activeTab === tab.id 
+            ? 'white' 
+            : darkMode ? 'white' : 'black'
+        }}
       >
                 <FontAwesomeIcon icon={tab.icon} />
                 {tab.label}
@@ -224,7 +510,7 @@ const AnalyticsModal = ({ show, onHide, devices }) => {
           ))}
         </Nav>
         
-        <div className="p-4" style={{ height: 'calc(80vh - 60px)', overflowY: 'auto' }}>
+        <div className="content-section">
           {/* Site-Level Summary */}
           {activeTab === 'site-summary' && (
             <motion.div
@@ -244,7 +530,83 @@ const AnalyticsModal = ({ show, onHide, devices }) => {
                 <FontAwesomeIcon icon={faBuilding} className="me-2" />
                 Site-Level Device Summary
               </h5>
-              <div className="site-level-summary mb-4">
+              
+              {/* Real-time Dashboard Stats */}
+              {(() => {
+                const metrics = getDashboardMetrics(devices);
+                return (
+                  <Row className="g-4 card-spacing">
+                    <Col>
+                      <motion.div variants={cardVariants} className="card h-100 border-0 shadow-sm">
+                        <div className="card-body d-flex align-items-center">
+                          <div className={`fa-icon-wrapper bg-primary bg-opacity-10`}>
+                            <FontAwesomeIcon icon={faServer} className="text-primary" />
+                          </div>
+                          <div>
+                            <h6 className="text-muted mb-1">Total Devices</h6>
+                            <h4 className="mb-0 fw-bold">{metrics.totalDevices}</h4>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </Col>
+                    <Col>
+                      <motion.div variants={cardVariants} className="card h-100 border-0 shadow-sm">
+                        <div className="card-body d-flex align-items-center">
+                          <div className={`fa-icon-wrapper bg-success bg-opacity-10`}>
+                            <FontAwesomeIcon icon={faArrowUp} className="text-success" />
+                          </div>
+                          <div>
+                            <h6 className="text-muted mb-1">Active Devices</h6>
+                            <h4 className="mb-0 fw-bold">{metrics.activeDevices}</h4>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </Col>
+                    <Col>
+                      <motion.div variants={cardVariants} className="card h-100 border-0 shadow-sm">
+                        <div className="card-body d-flex align-items-center">
+                          <div className={`fa-icon-wrapper bg-danger bg-opacity-10`}>
+                            <FontAwesomeIcon icon={faExclamationTriangle} className="text-danger" />
+                          </div>
+                          <div>
+                            <h6 className="text-muted mb-1">Offline Devices</h6>
+                            <h4 className="mb-0 fw-bold">{metrics.offlineDevices}</h4>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </Col>
+                    <Col>
+                      <motion.div variants={cardVariants} className="card h-100 border-0 shadow-sm">
+                        <div className="card-body d-flex align-items-center">
+                          <div className={`fa-icon-wrapper bg-warning bg-opacity-10`}>
+                            <FontAwesomeIcon icon={faShoppingCart} className="text-warning" />
+                          </div>
+                          <div>
+                            <h6 className="text-muted mb-1">Pending Updates</h6>
+                            <h4 className="mb-0 fw-bold">{metrics.pendingUpdates}</h4>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </Col>
+                    <Col>
+                      <motion.div variants={cardVariants} className="card h-100 border-0 shadow-sm">
+                        <div className="card-body d-flex align-items-center">
+                          <div className={`fa-icon-wrapper bg-info bg-opacity-10`}>
+                            <FontAwesomeIcon icon={faSync} className="text-info" />
+                          </div>
+                          <div>
+                            <h6 className="text-muted mb-1">Recent Activity</h6>
+                            <h4 className="mb-0 fw-bold">{metrics.recentActivity}</h4>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </Col>
+                  </Row>
+                );
+              })()}
+              
+              {/* Rest of the site summary content */}
+              <div className="site-level-summary card-spacing">
                 <Row className="g-0">
                   <Col lg={6} className="h-100">
                     <motion.div variants={cardVariants} className="h-100">
@@ -733,326 +1095,6 @@ const AnalyticsModal = ({ show, onHide, devices }) => {
           Close
         </Button>
       </Modal.Footer>
-
-      {/* Add custom styles */}
-      <style jsx="true">{`
-        @import url('https://fonts.googleapis.com/css2?family=Afacad:wght@300;400;500;600;700&display=swap');
-
-        /* Apply Afacad font globally */
-        .analytics-modal * {
-          font-family: 'Afacad', sans-serif !important;
-          font-weight: 400 !important;
-        }
-
-        .analytics-modal .modal-content {
-          border-radius: 20px;
-          overflow: hidden;
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          width: 90vw;
-          max-height: 90vh;
-        }
-
-        .analytics-modal .nav-pills .nav-link {
-          transition: all 0.3s ease;
-          border-radius: 30px;
-          padding: 8px 20px;
-          font-weight: 400 !important;
-        }
-
-        .analytics-modal h3 {
-          font-weight: 500 !important;
-        }
-
-        .analytics-modal h4, 
-        .analytics-modal h5, 
-        .analytics-modal h6 {
-          font-weight: 500 !important;
-          margin-bottom: 1.5rem;
-        }
-
-        .analytics-modal .badge {
-          font-weight: 400 !important;
-        }
-
-        .analytics-modal .table th {
-          font-weight: 500 !important;
-        }
-
-        .analytics-modal .modal-title {
-          font-weight: 500 !important;
-        }
-
-        /* Card content styles */
-        .analytics-modal .card-body {
-          padding: 1.5rem;
-        }
-
-        .analytics-modal .text-muted {
-          color: ${darkMode ? '#a0a0a0' : '#6c757d'} !important;
-        }
-
-        /* Table styles */
-        th {
-          font-weight: 500 !important;
-        }
-
-        /* Override Bootstrap font weights */
-        .fw-bold {
-          font-weight: 500 !important;
-        }
-
-        .fw-medium {
-          font-weight: 400 !important;
-        }
-
-        /* Specific component overrides */
-        .modal-title span {
-          font-weight: 500 !important;
-        }
-
-        .nav-link {
-          font-weight: 400 !important;
-        }
-
-        .btn {
-          font-weight: 400 !important;
-        }
-
-        .badge {
-          font-weight: 400 !important;
-        }
-
-        .analytics-modal .modal-body {
-          scrollbar-width: thin;
-          scrollbar-color: ${darkMode ? '#555' : '#ccc'} transparent;
-        }
-
-        .analytics-modal .modal-body::-webkit-scrollbar {
-          width: 6px;
-        }
-
-        .analytics-modal .modal-body::-webkit-scrollbar-track {
-          background: transparent;
-        }
-
-        .analytics-modal .modal-body::-webkit-scrollbar-thumb {
-          background-color: ${darkMode ? '#555' : '#ccc'};
-          border-radius: 3px;
-        }
-
-        .analytics-modal .modal-content {
-          max-height: 90vh;
-          margin: 5vh auto;
-        }
-
-        .analytics-modal .tab-content {
-          height: 100%;
-        }
-
-        .analytics-modal .tab-pane {
-          height: 100%;
-          overflow-y: auto;
-        }
-
-        /* Ensure tables don't overflow */
-        .table-responsive {
-          margin-bottom: 1rem;
-          max-height: calc(80vh - 200px);
-          overflow-y: auto;
-        }
-
-        /* Keep headers visible while scrolling tables */
-        .table thead th {
-          position: sticky;
-          top: 0;
-          background: ${darkMode ? '#292929' : '#fff'};
-          z-index: 1;
-        }
-
-        /* Dark mode styles */
-        .dark-mode .table-container {
-          border-color: #333;
-          background-color: #292929;
-        }
-
-        .dark-mode .table-scroll {
-          background-color: #292929;
-        }
-
-        .dark-mode table {
-          color: #e0e0e0;
-        }
-
-        .dark-mode thead {
-          background: #292929;
-        }
-
-        .dark-mode th {
-          background: #292929;
-          border-bottom-color: #444;
-          color: #ffffff;
-          font-weight: 500;
-        }
-
-        .dark-mode td {
-          border-bottom-color: #3a3a3a;
-          color: #e0e0e0;
-        }
-        
-        /* Override Bootstrap table styles */
-        .table-dark {
-          --bs-table-bg: #292929 !important;
-          --bs-table-striped-bg: #323232 !important;
-          --bs-table-hover-bg: #3a3a3a !important;
-          color: #e0e0e0 !important;
-          border-color: #333 !important;
-        }
-        
-        /* Additional specific selectors to override Bootstrap specificity */
-        .table-dark > tbody {
-          background-color: #292929 !important;
-        }
-
-        /* Force dark backgrounds for table rows */
-        .table-dark tbody tr {
-          background-color: #292929 !important;
-        }
-        
-        .table-dark tbody tr:nth-child(odd) {
-          background-color: #292929 !important;
-        }
-        
-        .table-dark tbody tr:nth-child(even) {
-          background-color: #323232 !important;
-        }
-
-        .table-dark tbody tr:hover {
-          background-color: #3a3a3a !important;
-        }
-
-        .dark-mode .form-check-input {
-          background-color: #333;
-          border-color: #555;
-        }
-
-        .dark-mode .form-check-input:checked {
-          background-color: #0d6efd;
-          border-color: #0d6efd;
-        }
-
-        .dark-mode .badge {
-          color: #f8f9fa !important;
-          font-weight: 500;
-        }
-
-        .dark-mode .badge.bg-info.bg-opacity-10 {
-          background-color: rgba(13, 202, 240, 0.2) !important;
-        }
-
-        .dark-mode .badge.bg-secondary.bg-opacity-10 {
-          background-color: rgba(108, 117, 125, 0.2) !important;
-        }
-
-        .dark-mode .text-muted {
-          color: #aaaaaa !important;
-        }
-
-        /* Scrollbar styling */
-        .table-scroll::-webkit-scrollbar {
-          width: 8px;
-          height: 8px;
-        }
-
-        .table-scroll::-webkit-scrollbar-track {
-          background: #f1f1f1;
-          border-radius: 4px;
-        }
-
-        .table-scroll::-webkit-scrollbar-thumb {
-          background: #888;
-          border-radius: 4px;
-        }
-
-        .table-scroll::-webkit-scrollbar-thumb:hover {
-          background: #555;
-        }
-
-        /* Dark mode scrollbar */
-        .dark-mode .table-scroll::-webkit-scrollbar-track {
-          background: #2a2a2a;
-        }
-
-        .dark-mode .table-scroll::-webkit-scrollbar-thumb {
-          background: #555;
-        }
-
-        .dark-mode .table-scroll::-webkit-scrollbar-thumb:hover {
-          background: #777;
-        }
-
-        /* Dark mode UI components */
-        .dark-mode .bg-white {
-          background-color: #202020 !important;
-          color: #e0e0e0;
-        }
-
-        .dark-mode .w-100.h-100.overflow-hidden.bg-light {
-          background-color: #121212 !important;
-        }
-
-        .dark-mode .bg-dark {
-          background-color: #202020 !important;
-        }
-
-        /* Search and filter controls */
-        .dark-mode .btn-light, 
-        .dark-mode .form-control,
-        .dark-mode .input-group-text {
-          background-color: #252525 !important;
-          border-color: #444 !important;
-          color: #e0e0e0 !important;
-        }
-
-        .dark-mode .btn-light:hover {
-          background-color: #303030 !important;
-        }
-
-        .dark-mode .form-control::placeholder {
-          color: #888 !important;
-        }
-
-        .dark-mode .form-control:focus {
-          background-color: #2d2d2d;
-          border-color: #666;
-          box-shadow: 0 0 0 0.25rem rgba(255, 255, 255, 0.1);
-        }
-
-        .dark-mode .dropdown-menu {
-          background-color: #2d2d2d;
-          border-color: #444;
-        }
-
-        .dark-mode .dropdown-item {
-          color: #e0e0e0;
-        }
-
-        .dark-mode .dropdown-item:hover {
-          background-color: #3a3a3a;
-        }
-
-        .dark-mode .alert-danger {
-          background-color: rgba(220, 53, 69, 0.2);
-          color: #f8d7da;
-          border-color: rgba(220, 53, 69, 0.3);
-        }
-        
-        .dark-mode .spinner-border.text-primary {
-          color: #0d6efd !important;
-        }
-      `}</style>
     </Modal>
   );
 };
