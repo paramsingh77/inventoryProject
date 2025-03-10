@@ -1,70 +1,102 @@
-# Getting Started with Create React App
+# Email-Based Purchase Order & Invoice Workflow
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+This project implements an end-to-end email-based workflow for purchase orders and invoices. The system allows you to:
 
-## Available Scripts
+1. Generate and send purchase order PDFs to vendors via email
+2. Automatically receive and process invoice PDFs from vendor replies
+3. Link invoices to their corresponding purchase orders
+4. View and manage all invoices in the application
 
-In the project directory, you can run:
+## Features
 
-### `npm start`
+- **Send POs via Email**: Generate PDF purchase orders and email them to vendors
+- **Automatic Email Checking**: Backend service that periodically checks for new invoice emails
+- **PDF Processing**: Extract and store invoice PDFs from email attachments
+- **PO Reference Extraction**: Automatically extract PO references from email subjects
+- **Invoice Management**: View, download, and link invoices to purchase orders
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## How It Works
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+### Sending Purchase Orders
 
-### `npm test`
+1. Create a purchase order in the application
+2. Click the "Send PO to Vendor" button
+3. A PDF is generated with the PO details
+4. The PDF is sent to the vendor via email with instructions to reply to `invoices@yourcompany.com`
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+### Receiving Invoices
 
-### `npm run build`
+1. Vendor receives PO email and responds with an invoice PDF
+2. The backend service checks the dedicated email inbox every 5 minutes
+3. When a new email with PDF attachment is found:
+   - The PDF is saved to the server
+   - PO reference is extracted from the email subject
+   - A new invoice record is created in the database
+   - If PO reference is found, the invoice is automatically linked
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+### Viewing Invoices
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+1. Navigate to the Invoices section in the application
+2. View a list of all received invoices with their status
+3. Click on an invoice to view details and download the PDF
+4. Manually link invoices to POs if they weren't automatically linked
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Technologies Used
 
-### `npm run eject`
+### Frontend
+- React.js with Bootstrap for UI
+- Framer Motion for animations
+- Axios for API requests
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+### Backend
+- Node.js with Express
+- Nodemailer for sending emails
+- IMAP for receiving emails
+- PDFKit for generating PDF documents
+- File system for storing PDFs
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## Setup
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+### Email Configuration
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+To use the email functionality, you need to configure the following environment variables:
 
-## Learn More
+```
+EMAIL_USER=invoices@yourcompany.com
+EMAIL_PASS=your-email-password
+EMAIL_HOST=smtp.yourcompany.com
+IMAP_HOST=imap.yourcompany.com
+EMAIL_CHECK_INTERVAL=300000
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+### Development
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+1. Install backend dependencies:
+```
+cd backend
+npm install
+```
 
-### Code Splitting
+2. Install frontend dependencies:
+```
+cd ../src
+npm install
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+3. Start the backend server:
+```
+cd ../backend
+npm run dev
+```
 
-### Analyzing the Bundle Size
+4. Start the frontend development server:
+```
+cd ../src
+npm start
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+## Notes
 
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+- For production use, ensure you use proper email authentication (OAuth2 is recommended)
+- The system currently uses basic file storage. For production, consider using cloud storage solutions like AWS S3
+- Email checking interval can be adjusted via environment variables

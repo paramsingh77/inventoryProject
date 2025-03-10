@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -9,14 +9,22 @@ import Dashboard from './pages/Dashboard';
 import Sites from './pages/Sites';
 import Inventory from './pages/Inventory';
 import InventoryManagement from './pages/InventoryManagement';
+import Users from './pages/Users';
 import Orders from './pages/Orders';
 import Suppliers from './pages/Suppliers';
-import Users from './pages/Users';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import MainLayout from './components/Layout/MainLayout';
+import { addTestButton } from './utils/testWorkflow';
 
 const App = () => {
+    useEffect(() => {
+        // Add test button in development mode
+        if (process.env.NODE_ENV === 'development') {
+            addTestButton();
+        }
+    }, []);
+
     return (
         <ThemeProvider>
             <AuthProvider>

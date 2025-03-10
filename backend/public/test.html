@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Backend Connection Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    button { padding: 10px; margin: 5px; cursor: pointer; }
+    pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow: auto; }
+    .success { color: green; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+  <h1>Backend Connection Test</h1>
+  
+  <div>
+    <h2>1. Test Basic Connectivity</h2>
+    <button onclick="testHealth()">Test Health Endpoint</button>
+    <div id="healthResult"></div>
+  </div>
+  
+  <div>
+    <h2>2. Test File Upload</h2>
+    <button onclick="testUpload()">Test File Upload</button>
+    <div id="uploadResult"></div>
+  </div>
+  
+  <script>
+    // Test the health endpoint
+    async function testHealth() {
+      const resultDiv = document.getElementById('healthResult');
+      resultDiv.innerHTML = '<p>Testing connection...</p>';
+      
+      const ports = [5000, 3001, 2000, 8080];
+      
+      for (const port of ports) {
+        try {
+          resultDiv.innerHTML += `<p>Trying port ${port}...</p>`;
+          
+          const response = await fetch(`http://localhost:${port}/api/health`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            resultDiv.innerHTML = `
+              <p class="success">✅ Connection successful to port ${port}!</p>
+              <pre>${JSON.stringify(data, null, 2)}</pre>
+              <p><strong>Your backend is running at: http://localhost:${port}/api</strong></p>
+            `;
+            return; // Exit if successful
+          } else {
+            resultDiv.innerHTML += `<p class="error">❌ Port ${port} responded with status: ${response.status}</p>`;
+          }
+        } catch (error) {
+          resultDiv.innerHTML += `<p class="error">❌ Could not connect to port ${port}: ${error.message}</p>`;
+        }
+      }
+      
+      resultDiv.innerHTML += `
+        <p class="error">❌ Could not connect to any port. Make sure your backend is running.</p>
+        <p>Try starting your backend with: <code>cd backend && npm run dev</code></p>
+      `;
+    }
+    
+    // Test file upload
+    async function testUpload() {
+      const resultDiv = document.getElementById('uploadResult');
+      resultDiv.innerHTML = '<p>Creating test file and uploading...</p>';
+      
+      // Create a simple PDF-like blob
+      const blob = new Blob(['%PDF-1.5 Test PDF content'], { type: 'application/pdf' });
+      const file = new File([blob], 'test.pdf', { type: 'application/pdf' });
+      
+      const formData = new FormData();
+      formData.append('pdfFile', file);
+      formData.append('testField', 'test value');
+      
+      const ports = [5000, 3001, 2000, 8080];
+      
+      for (const port of ports) {
+        try {
+          resultDiv.innerHTML += `<p>Trying upload to port ${port}...</p>`;
+          
+          const response = await fetch(`http://localhost:${port}/api/email/test-upload`, {
+            method: 'POST',
+            body: formData
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            resultDiv.innerHTML = `
+              <p class="success">✅ File upload successful to port ${port}!</p>
+              <pre>${JSON.stringify(data, null, 2)}</pre>
+              <p><strong>Your backend file upload is working at: http://localhost:${port}/api</strong></p>
+            `;
+            return; // Exit if successful
+          } else {
+            const errorText = await response.text();
+            resultDiv.innerHTML += `<p class="error">❌ Upload to port ${port} failed with status: ${response.status}</p>`;
+            resultDiv.innerHTML += `<pre>${errorText}</pre>`;
+          }
+        } catch (error) {
+          resultDiv.innerHTML += `<p class="error">❌ Could not upload to port ${port}: ${error.message}</p>`;
+        }
+      }
+      
+      resultDiv.innerHTML += `
+        <p class="error">❌ Could not upload to any port. Make sure your backend is running and configured correctly.</p>
+      `;
+    }
+  </script>
+</body>
+</html> 

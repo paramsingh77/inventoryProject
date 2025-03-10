@@ -1174,6 +1174,8 @@ const ProductList = () => {
         }
 
         const data = await response.json();
+        console.log("Here is teh data:", data);
+        
         setDevices(data);
         setLoading(false);
       } catch (error) {

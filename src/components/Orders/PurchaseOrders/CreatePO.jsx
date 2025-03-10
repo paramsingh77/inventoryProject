@@ -7,7 +7,8 @@ import {
   Col,
   Table,
   InputGroup,
-  Image
+  Image,
+  Spinner
 } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -16,7 +17,8 @@ import {
   faTrash,
   faSearch,
   faTimes,
-  faFileInvoice
+  faFileInvoice,
+  faPaperPlane
 } from '@fortawesome/free-solid-svg-icons';
 import { useNotification } from '../../../context/NotificationContext';
 import { suppliers, products } from '../../../data/samplePOData';
@@ -25,7 +27,12 @@ import ItemsSelection from './ItemsSelection';
 import AdditionalDetails from './AdditionalDetails';
 import companyLogo from '../../../images/image copy.png';
 import { motion } from 'framer-motion';
-import { generatePOPdf } from '../../../utils/pdfGenerator';
+import { generatePOPdf, generateOptimizedPOPdf } from '../../../utils/pdfGenerator';
+import {
+  sendPurchaseOrderEmail,
+  sendPurchaseOrderWithPdf,
+  testFileUpload
+} from '../../../services/emailService';
 
 // Helper Functions - Move outside component
 const generatePONumber = () => {
@@ -184,6 +191,9 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
       }
     }
   });
+
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [generatedPdfBlob, setGeneratedPdfBlob] = useState(null);
 
   // Item Management Functions
   const calculateTotals = (items) => {
@@ -666,8 +676,13 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
       const response = await submitPurchaseOrder(purchaseOrderData);
       
       if (response.success) {
-        // Generate PDF
-        const pdfBlob = await generatePOPdf(purchaseOrderData);
+        // Generate optimized PDF
+        addNotification('info', 'Generating PDF...');
+        const pdfBlob = await generateOptimizedPOPdf(purchaseOrderData);
+        setGeneratedPdfBlob(pdfBlob);
+        
+        // Log PDF size
+        console.log(`Generated PDF size: ${(pdfBlob.size / (1024 * 1024)).toFixed(2)}MB`);
         
         // Create object URL for the PDF
         const pdfUrl = URL.createObjectURL(pdfBlob);
@@ -693,6 +708,190 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
     }
   };
 
+  // Helper function to compress PDF blob
+  const compressPdfBlob = async (pdfBlob) => {
+    // If the PDF is already under 10MB, return it as is
+    if (pdfBlob.size < 10 * 1024 * 1024) {
+      console.log('PDF is already under 10MB, no compression needed');
+      return pdfBlob;
+    }
+    
+    console.log(`Original PDF size: ${(pdfBlob.size / (1024 * 1024)).toFixed(2)}MB`);
+    
+    try {
+      // For PDFs generated with jsPDF, we can try to reduce the quality
+      // This is a simple approach - for more advanced compression, you'd need a dedicated PDF library
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      // Create an image from the PDF
+      const img = new Image();
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      
+      // Wait for the image to load
+      await new Promise((resolve) => {
+        img.onload = resolve;
+        img.src = pdfUrl;
+      });
+      
+      // Set canvas dimensions (reduce if needed)
+      const scaleFactor = Math.min(1, 10 * 1024 * 1024 / pdfBlob.size); // Scale down if over 10MB
+      canvas.width = img.width * scaleFactor;
+      canvas.height = img.height * scaleFactor;
+      
+      // Draw the image on the canvas with reduced quality
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      
+      // Convert canvas to blob with reduced quality
+      const compressedBlob = await new Promise((resolve) => {
+        canvas.toBlob(resolve, 'application/pdf', 0.7); // 0.7 quality (adjust as needed)
+      });
+      
+      console.log(`Compressed PDF size: ${(compressedBlob.size / (1024 * 1024)).toFixed(2)}MB`);
+      
+      // Clean up
+      URL.revokeObjectURL(pdfUrl);
+      
+      return compressedBlob;
+    } catch (error) {
+      console.error('Error compressing PDF:', error);
+      // Return original if compression fails
+      return pdfBlob;
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!generatedPdfBlob) {
+      addNotification('error', 'No PDF generated yet. Please save the PO first.');
+      return;
+    }
+    
+    setSendingEmail(true);
+    try {
+      // Log PDF blob details for debugging
+      console.log('PDF Blob details:', {
+        type: generatedPdfBlob.type,
+        size: generatedPdfBlob.size,
+        lastModified: generatedPdfBlob.lastModified
+      });
+      
+      // Try to compress the PDF if it's large
+      let pdfToSend = generatedPdfBlob;
+      if (generatedPdfBlob.size > 10 * 1024 * 1024) {
+        addNotification('info', 'PDF is large, attempting to compress...');
+        pdfToSend = await compressPdfBlob(generatedPdfBlob);
+        
+        if (pdfToSend.size > 50 * 1024 * 1024) {
+          addNotification('error', 'PDF is too large (over 50MB) even after compression. Please try creating a smaller document.');
+          setSendingEmail(false);
+          return;
+        }
+      }
+      
+      // Create email data
+      const emailData = {
+          to: formData.vendor.email,
+          subject: `Purchase Order #${formData.poNumber} from ${formData.companyName}`,
+          message: `Dear ${formData.vendor.contactPerson},
+
+I hope this message finds you well.
+
+Please find attached our Purchase Order (#${formData.poNumber}) for your reference.
+
+Kindly review and confirm receipt of this order at your earliest convenience.
+We would appreciate it if you could send the invoice to invoice.tester11@gmail.com, referencing the PO number in the subject line.
+
+Thank you for your continued support and collaboration.
+
+Best regards,
+${formData.requestedBy}
+${formData.companyName}`
+        };
+      
+      // Prepare the file
+      const fileName = `PO-${formData.poNumber}-${Date.now()}.pdf`;
+      const file = new File([pdfToSend], fileName, { type: 'application/pdf' });
+      
+      // Create form data
+      const formDataObj = new FormData();
+      formDataObj.append('poId', formData.poNumber);
+      formDataObj.append('to', emailData.to);
+      formDataObj.append('subject', emailData.subject);
+      formDataObj.append('message', emailData.message);
+      formDataObj.append('pdfFile', file);
+      
+      // DIRECT APPROACH: Use fetch with explicit URL
+      console.log('Attempting direct fetch to backend...');
+      
+      try {
+        const fetchResponse = await fetch('http://localhost:2000/api/email/send-po-with-file', {
+          method: 'POST',
+          body: formDataObj,
+          // Don't use credentials for cross-origin to avoid CORS preflight issues
+          credentials: 'omit'
+        });
+        
+        if (!fetchResponse.ok) {
+          let errorMessage = 'Server responded with an error';
+          try {
+            const errorData = await fetchResponse.json();
+            errorMessage = errorData.message || fetchResponse.statusText;
+          } catch (e) {
+            // If we can't parse JSON, just use status text
+            errorMessage = fetchResponse.statusText;
+          }
+          throw new Error(`Server error: ${errorMessage}`);
+        }
+        
+        const responseData = await fetchResponse.json();
+        console.log('Email sent successfully:', responseData);
+        addNotification('success', 'Purchase Order sent to vendor successfully');
+        
+        // Dispatch event to update PO list
+        const poEvent = new CustomEvent('purchaseOrder', {
+          detail: {
+            type: 'NEW_PO',
+            po: {
+              ...formData,
+              status: 'Pending', // Set initial status to Pending
+              hasInvoice: false
+            }
+          }
+        });
+        window.dispatchEvent(poEvent);
+        
+        // Close modal and notify parent component
+        if (onSuccess) {
+          onSuccess(formData);
+        }
+        onHide();
+      } catch (directError) {
+        console.error('Direct fetch failed:', directError);
+        
+        // Show a more helpful error message
+        let errorMessage = 'Failed to connect to the backend server.';
+        
+        if (directError.message.includes('Failed to fetch')) {
+          errorMessage = `
+            Backend connection failed. Please:
+            1. Make sure your backend server is running
+            2. Check if it's running on port 2000 (or update the code with the correct port)
+            3. Try the test page at http://localhost:2000/api/health to diagnose the issue
+          `;
+        } else {
+          errorMessage = directError.message;
+        }
+        
+        addNotification('error', errorMessage);
+      }
+    } catch (error) {
+      console.error('Error in send email process:', error);
+      addNotification('error', 'Failed to send Purchase Order. Please try again.');
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+  
   const submitPurchaseOrder = async (data) => {
     // This would typically be an API call
     // For now, we'll simulate a successful response
@@ -775,12 +974,38 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
             </Button>
           </motion.div>
         ) : (
-          <motion.div whileHover={{ scale: 1.02 }}>
-            <Button variant="success" onClick={handleSubmit}>
-              <FontAwesomeIcon icon={faSave} className="me-2" />
-              Create PO
-            </Button>
-          </motion.div>
+          <>
+            <motion.div whileHover={{ scale: 1.02 }} className="me-2">
+              <Button 
+                variant="success" 
+                onClick={handleSubmit}
+              >
+                <FontAwesomeIcon icon={faSave} className="me-2" />
+                Create PO
+              </Button>
+            </motion.div>
+            {generatedPdfBlob && (
+              <motion.div whileHover={{ scale: 1.02 }}>
+                <Button 
+                  variant="primary" 
+                  onClick={handleSendEmail}
+                  disabled={sendingEmail}
+                >
+                  {sendingEmail ? (
+                    <>
+                      <Spinner animation="border" size="sm" className="me-2" />
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <FontAwesomeIcon icon={faPaperPlane} className="me-2" />
+                      Send PO
+                    </>
+                  )}
+                </Button>
+              </motion.div>
+            )}
+          </>
         )}
       </Modal.Footer>
     </Modal>
