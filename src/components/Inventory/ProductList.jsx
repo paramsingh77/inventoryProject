@@ -19,7 +19,9 @@ import {
   faArrowUp,
   faExclamationTriangle,
   faShoppingCart,
-  faSync
+  faSync,
+  faLaptop,
+  faCloud
 } from '@fortawesome/free-solid-svg-icons';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
@@ -1412,6 +1414,49 @@ const ProductList = () => {
       return 'danger';
   };
 
+  // Get device type color based on device type
+  const getDeviceTypeColor = (deviceType) => {
+    if (!deviceType) return 'secondary';
+    
+    const type = deviceType.toLowerCase();
+    
+    if (type.includes('laptop')) return 'info';
+    if (type.includes('desktop')) return 'primary';
+    if (type.includes('server')) return 'danger';
+    if (type.includes('virtual')) return 'warning';
+    if (type.includes('all-in-one')) return 'success';
+    if (type.includes('micro')) return 'indigo';
+    if (type.includes('tower')) return 'primary';
+    if (type.includes('small form factor') || type.includes('sff')) return 'royal-blue';
+    if (type.includes('custom')) return 'purple';
+    
+    return 'secondary';
+  };
+
+  // Get device type icon
+  const getDeviceTypeIcon = (deviceType) => {
+    if (!deviceType) return faDesktop;
+    
+    const type = deviceType.toLowerCase();
+    
+    if (type.includes('laptop')) return faLaptop;
+    if (type.includes('server')) return faServer;
+    if (type.includes('virtual')) return faCloud;
+    
+    return faDesktop; // Default for desktop and others
+  };
+
+  // Extract unique device types for filtering
+  const deviceTypes = React.useMemo(() => {
+    const types = new Set();
+    devices.forEach(device => {
+      if (device.device_type) {
+        types.add(device.device_type);
+      }
+    });
+    return ['all', ...Array.from(types).sort()];
+  }, [devices]);
+
   if (loading) {
     return (
       <div className={`w-100 h-100 overflow-hidden ${darkMode ? 'dark-mode bg-dark' : 'bg-light'}`}>
@@ -1499,10 +1544,47 @@ const ProductList = () => {
               size="sm" 
               className={`${darkMode ? 'border-secondary text-light' : 'border'} d-flex align-items-center gap-2`}
               style={{ backgroundColor: darkMode ? '#252525' : '' }}
-              onClick={() => setSelectedDeviceType(selectedDeviceType === 'all' ? 'Desktop' : 'all')}
+              onClick={() => setSelectedDeviceType(selectedDeviceType === 'all' ? 'Desktop (SFF/Tower)' : 'all')}
             >
               Device Type <FontAwesomeIcon icon={faChevronDown} size="xs" />
             </Button>
+            {/* Replace with dropdown for device types */}
+            <div className="dropdown">
+              <Button 
+                variant={darkMode ? "dark" : "light"} 
+                size="sm" 
+                className={`${darkMode ? 'border-secondary text-light' : 'border'} d-flex align-items-center gap-2 dropdown-toggle`}
+                style={{ backgroundColor: darkMode ? '#252525' : '' }}
+                id="deviceTypeDropdown"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+              >
+                <FontAwesomeIcon icon={getDeviceTypeIcon(selectedDeviceType)} className="me-1" />
+                {selectedDeviceType === 'all' ? 'All Device Types' : selectedDeviceType}
+              </Button>
+              <ul 
+                className={`dropdown-menu ${darkMode ? 'dropdown-menu-dark' : ''}`} 
+                aria-labelledby="deviceTypeDropdown"
+                style={{ maxHeight: '300px', overflowY: 'auto' }}
+              >
+                {deviceTypes.map(type => (
+                  <li key={type}>
+                    <button 
+                      className={`dropdown-item d-flex align-items-center gap-2 ${selectedDeviceType === type ? 'active' : ''}`}
+                      onClick={() => setSelectedDeviceType(type)}
+                    >
+                      {type !== 'all' && (
+                        <FontAwesomeIcon 
+                          icon={getDeviceTypeIcon(type)} 
+                          className={`text-${getDeviceTypeColor(type)}`} 
+                        />
+                      )}
+                      {type === 'all' ? 'All Device Types' : type}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
             <Button 
               variant={darkMode ? "dark" : "light"} 
               size="sm" 
@@ -1621,11 +1703,13 @@ const ProductList = () => {
                       <td className="py-2 px-4">{formatDate(device.last_seen)}</td>
                       <td className="py-2 px-4">
                         <Badge 
-                          bg={device.device_type?.toLowerCase() === 'laptop' ? 'info' : 'secondary'}
-                          text="dark"
-                          className="bg-opacity-10"
+                          bg={getDeviceTypeColor(device.device_type)}
+                          text={darkMode ? 'light' : 'dark'}
+                          className="bg-opacity-10 d-flex align-items-center gap-1"
+                          style={{ width: 'fit-content' }}
                         >
-                          {device.device_type}
+                          <FontAwesomeIcon icon={getDeviceTypeIcon(device.device_type)} size="xs" />
+                          {device.device_type || 'Unknown'}
                         </Badge>
                       </td>
                       <td className="py-2 px-4">{device.device_model}</td>
