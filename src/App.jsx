@@ -17,6 +17,11 @@ import Settings from './pages/Settings';
 import MainLayout from './components/Layout/MainLayout';
 import { addTestButton } from './utils/testWorkflow';
 import { addBackendTestButton } from './utils/testBackend';
+import { addOrderTestButton } from './utils/testOrderFlow';
+import { Container } from 'react-bootstrap';
+import OrdersTabs from './components/Orders/OrdersTabs';
+import InvoiceRoutes from './components/Orders/InvoiceRoutes';
+import OrderTrackingCard from './components/Orders/OrderTrackingCard';
 
 const App = () => {
     useEffect(() => {
@@ -27,6 +32,9 @@ const App = () => {
             
             // Add backend diagnostic test button
             addBackendTestButton();
+            
+            // Add order flow test button
+            addOrderTestButton();
         }
     }, []);
 
@@ -35,64 +43,76 @@ const App = () => {
             <AuthProvider>
                 <NotificationProvider>
                     <Router>
-                        <Routes>
-                            {/* Public Routes */}
-                            <Route path="/login" element={<Login />} />
+                        <Container fluid className="p-4">
+                            <Routes>
+                                {/* Public Routes */}
+                                <Route path="/login" element={<Login />} />
 
-                            {/* Private Routes */}
-                            <Route path="/" element={<PrivateRoute />}>
-                                <Route index element={<Navigate to="/sites" replace />} />
-                                <Route path="sites" element={<Sites />} />
-                                <Route path="dashboard" element={
-                                    <MainLayout>
-                                        <Dashboard />
-                                    </MainLayout>
-                                } />
-                                <Route path="inventory" element={
-                                    <MainLayout>
-                                        <Inventory />
-                                    </MainLayout>
-                                } />
-                                <Route path="inventory/:siteName" element={
-                                    <MainLayout>
-                                        <InventoryManagement />
-                                    </MainLayout>
-                                } />
-                                <Route path="inventory/:siteName/inventory" element={
-                                    <MainLayout>
-                                        <InventoryManagement />
-                                    </MainLayout>
-                                } />
-                                <Route path="users" element={
-                                    <MainLayout>
-                                        <Users />
-                                    </MainLayout>
-                                } />
-                                <Route path="orders" element={
-                                    <MainLayout>
-                                        <Orders />
-                                    </MainLayout>
-                                } />
-                                <Route path="suppliers" element={
-                                    <MainLayout>
-                                        <Suppliers />
-                                    </MainLayout>
-                                } />
-                                <Route path="reports" element={
-                                    <MainLayout>
-                                        <Reports />
-                                    </MainLayout>
-                                } />
-                                <Route path="settings" element={
-                                    <MainLayout>
-                                        <Settings />
-                                    </MainLayout>
-                                } />
-                            </Route>
+                                {/* Private Routes */}
+                                <Route path="/" element={<PrivateRoute />}>
+                                    <Route index element={<Navigate to="/sites" replace />} />
+                                    <Route path="sites" element={<Sites />} />
+                                    <Route path="dashboard" element={
+                                        <MainLayout>
+                                            <Dashboard />
+                                        </MainLayout>
+                                    } />
+                                    <Route path="inventory" element={
+                                        <MainLayout>
+                                            <Inventory />
+                                        </MainLayout>
+                                    } />
+                                    <Route path="inventory/:siteName" element={
+                                        <MainLayout>
+                                            <InventoryManagement />
+                                        </MainLayout>
+                                    } />
+                                    <Route path="inventory/:siteName/inventory" element={
+                                        <MainLayout>
+                                            <InventoryManagement />
+                                        </MainLayout>
+                                    } />
+                                    <Route path="users" element={
+                                        <MainLayout>
+                                            <Users />
+                                        </MainLayout>
+                                    } />
+                                    <Route path="orders" element={
+                                        <MainLayout>
+                                            <Orders />
+                                        </MainLayout>
+                                    } />
+                                    <Route path="orders/:orderId/track" element={
+                                        <MainLayout>
+                                            <OrderTrackingCard />
+                                        </MainLayout>
+                                    } />
+                                    <Route path="invoices/*" element={
+                                        <MainLayout>
+                                            <InvoiceRoutes />
+                                        </MainLayout>
+                                    } />
+                                    <Route path="suppliers" element={
+                                        <MainLayout>
+                                            <Suppliers />
+                                        </MainLayout>
+                                    } />
+                                    <Route path="reports" element={
+                                        <MainLayout>
+                                            <Reports />
+                                        </MainLayout>
+                                    } />
+                                    <Route path="settings" element={
+                                        <MainLayout>
+                                            <Settings />
+                                        </MainLayout>
+                                    } />
+                                </Route>
 
-                            {/* Catch all route */}
-                            <Route path="*" element={<Navigate to="/sites" replace />} />
-                        </Routes>
+                                {/* Catch all route */}
+                                <Route path="*" element={<Navigate to="/sites" replace />} />
+                            </Routes>
+                        </Container>
                     </Router>
                 </NotificationProvider>
             </AuthProvider>

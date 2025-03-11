@@ -14,6 +14,7 @@ import {
 import { useLocation, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import ProductList from '../components/Inventory/ProductList';
+import ImportDevices from '../components/Inventory/ImportDevices';
 
 const InventoryManagement = () => {
     const [selectedSite, setSelectedSite] = useState(null);
@@ -146,10 +147,11 @@ const InventoryManagement = () => {
                             <FontAwesomeIcon icon={faFileExport} className="me-2" />
                             Export
                         </Button>
-                        <Button variant="outline-secondary">
-                            <FontAwesomeIcon icon={faFileImport} className="me-2" />
-                            Import
-                        </Button>
+                        <ImportDevices onImportSuccess={() => {
+                            if (selectedSite?.siteName) {
+                                fetchSiteInventory(selectedSite.siteName);
+                            }
+                        }} />
                         <Button variant="primary">
                             <FontAwesomeIcon icon={faPlus} className="me-2" />
                             Add Device

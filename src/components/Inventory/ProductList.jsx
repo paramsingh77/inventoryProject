@@ -1122,6 +1122,7 @@ const ProductList = () => {
   // State variables
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [importSuccess, setImportSuccess] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDeviceType, setSelectedDeviceType] = useState('all');
@@ -1157,35 +1158,64 @@ const ProductList = () => {
     console.log(`${type}: ${message}`);
   };
 
+  // Fetch devices with import
+  const fetchDevicesWithImport = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      setImportSuccess(false);
+      const token = localStorage.getItem('token');
+      
+      // First, trigger the import of CSV data from the server
+      console.log('Importing device data from server file...');
+      const importResponse = await fetch('http://localhost:2000/api/devices/import-server-file', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!importResponse.ok) {
+        console.warn('Import may have failed, but continuing to fetch devices:', await importResponse.text());
+      } else {
+        const importResult = await importResponse.json();
+        console.log('Import successful:', importResult);
+        setImportSuccess(true);
+        
+        // Auto-hide import success message after 5 seconds
+        setTimeout(() => {
+          setImportSuccess(false);
+        }, 5000);
+      }
+      
+      // Then fetch the devices data
+      const response = await fetch('http://localhost:2000/api/devices/all', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch devices');
+      }
+
+      const data = await response.json();
+      console.log("Here is the data:", data);
+      
+      setDevices(data);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching devices:', error);
+      setError(error.message);
+      setLoading(false);
+    }
+  };
+
   // Fetch devices from API
   useEffect(() => {
-    const fetchDevices = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const response = await fetch('http://localhost:2000/api/devices/all', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch devices');
-        }
-
-        const data = await response.json();
-        console.log("Here is teh data:", data);
-        
-        setDevices(data);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching devices:', error);
-        setError(error.message);
-        setLoading(false);
-      }
-    };
-
-    fetchDevices();
+    fetchDevicesWithImport();
   }, []);
 
   // Filter devices based on search and filters
@@ -1373,21 +1403,33 @@ const ProductList = () => {
     if (!lastSeen) return 'danger';
     if (lastSeen === 'Currently Online') return 'success';
     
-    const date = new Date(lastSeen);
-    const now = new Date();
-    const diffDays = (now - date) / (1000 * 60 * 60 * 24);
-    
-    if (diffDays <= 1) return 'success';
-    if (diffDays <= 7) return 'warning';
-    return 'danger';
+      const date = new Date(lastSeen);
+      const now = new Date();
+      const diffDays = (now - date) / (1000 * 60 * 60 * 24);
+      
+      if (diffDays <= 1) return 'success';
+      if (diffDays <= 7) return 'warning';
+      return 'danger';
   };
 
   if (loading) {
     return (
-      <div className="d-flex justify-content-center align-items-center vh-100">
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
+      <div className={`w-100 h-100 overflow-hidden ${darkMode ? 'dark-mode bg-dark' : 'bg-light'}`}>
+        <ThemeToggle />
+        <Container fluid className="h-100 p-4">
+          <div className={`${darkMode ? 'dark-mode bg-dark' : 'bg-white'} rounded-3 p-4 h-100 d-flex flex-column justify-content-center align-items-center`} 
+            style={{ backgroundColor: darkMode ? '#202020' : '' }}>
+            <div className="spinner-border text-primary mb-3" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </div>
+            <h5 className={`mt-3 ${darkMode ? 'text-light' : ''}`}>
+              Loading device inventory...
+            </h5>
+            <p className="text-muted">
+              Importing and processing device data
+            </p>
+          </div>
+        </Container>
       </div>
     );
   }
@@ -1408,6 +1450,32 @@ const ProductList = () => {
           style={{ backgroundColor: darkMode ? '#202020' : '' }}>
           {/* Window dots */}
          
+          {/* Import success alert */}
+          {importSuccess && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="alert alert-success mb-3"
+            >
+              <FontAwesomeIcon icon={faSync} className="me-2" />
+              Device data successfully imported and refreshed!
+            </motion.div>
+          )}
+          
+          {/* Error alert */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="alert alert-danger mb-3"
+            >
+              <FontAwesomeIcon icon={faExclamationTriangle} className="me-2" />
+              Error: {error}
+            </motion.div>
+          )}
+
           {/* Header Controls */}
           <div className="d-flex flex-wrap gap-2 mb-3">
             <Button 
@@ -1443,6 +1511,19 @@ const ProductList = () => {
               onClick={() => setFilterStatus(filterStatus === 'all' ? 'active' : 'all')}
             >
               Status <FontAwesomeIcon icon={faChevronDown} size="xs" />
+            </Button>
+            
+            {/* Refresh Button */}
+            <Button 
+              variant={darkMode ? "dark" : "light"} 
+              size="sm" 
+              className={`${darkMode ? 'border-secondary text-light' : 'border'} d-flex align-items-center gap-2`}
+              style={{ backgroundColor: darkMode ? '#252525' : '' }}
+              onClick={fetchDevicesWithImport}
+              disabled={loading}
+            >
+              <FontAwesomeIcon icon={faSync} className={`me-1 ${loading ? 'fa-spin' : ''}`} />
+              {loading ? 'Refreshing...' : 'Refresh Data'}
             </Button>
             
             {/* Inventory Analytics Button */}

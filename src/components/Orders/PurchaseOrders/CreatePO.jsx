@@ -61,7 +61,7 @@ const styles = {
     left: '0',
     right: '0',
     height: '2px',
-    background: '#dee2e6',
+    background: '',
     zIndex: 1
   },
   step: {
@@ -77,7 +77,7 @@ const styles = {
     width: '40px',
     height: '40px',
     borderRadius: '50%',
-    background: isActive ? '#0d6efd' : '#e9ecef',
+    // background: isActive ? '#0d6efd' : '#e9ecef',
     color: isActive ? '#fff' : '#6c757d',
     display: 'flex',
     alignItems: 'center',
@@ -89,7 +89,8 @@ const styles = {
   stepTitle: {
     fontSize: '0.9rem',
     color: '#6c757d',
-    fontWeight: '500'
+    fontWeight: '500',
+    
   },
   sectionTitle: {
     fontSize: '1.1rem',
