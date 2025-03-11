@@ -8,7 +8,6 @@ const { Server } = require('socket.io');
 const deviceInventoryRoutes = require('./routes/deviceInventory');
 const csvRoutes = require('./routes/csv.routes');
 const invoiceRoutes = require('./routes/invoice.routes');
-const { startEmailChecker } = require('./utils/emailChecker');
 const path = require('path');
 require('dotenv').config();
 
@@ -21,6 +20,9 @@ const io = new Server(httpServer, {
     credentials: true
   }
 });
+
+// Export io for use in other modules
+module.exports.io = io;
 
 // Security middleware
 app.use(helmet());
@@ -66,6 +68,21 @@ app.use('/api/devices', deviceInventoryRoutes);
 app.use('/api/csv', csvRoutes);
 app.use('/api', invoiceRoutes);
 
+// Import and use mock email routes for development testing
+const mockEmailRoutes = require('./routes/mock-email.routes');
+app.use('/api', mockEmailRoutes);
+
+// Add a console message to indicate the mock email service is available
+console.log('\n📧 Mock Email Service enabled');
+console.log('📝 Available mock endpoints:');
+console.log('  - POST /api/mock/email/send-po');
+console.log('  - POST /api/mock/email/send-po-with-file');
+console.log('  - GET  /api/mock/email/check');
+console.log('  - GET  /api/mock/invoices');
+console.log('  - GET  /api/mock/invoices/:invoiceId');
+console.log('  - POST /api/mock/invoices/:invoiceId/link\n');
+console.log('🔄 Test with: http://localhost:2000/api/mock/health\n');
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
   console.log('A user connected');
@@ -96,36 +113,48 @@ app.use((req, res) => {
 // Initialize database and start server
 const startServer = async () => {
   try {
-    // Initialize database schema
-    await initializeSchema();
-    
-    // Check schema integrity
-    await checkSchema();
-    
-    // Start email checker service
-    startEmailChecker();
-    
-    // Get port from environment or use default
-    const PORT = process.env.PORT || 5000;
-    
-    // Start the server
+    // Start the server first, before attempting database initialization
+    const PORT = process.env.PORT || 2000;
     httpServer.listen(PORT, () => {
-      console.log('\x1b[32m%s\x1b[0m', '✅ Server started successfully!');
-      console.log('\x1b[36m%s\x1b[0m', `🚀 Server running on port: ${PORT}`);
-      console.log('\x1b[36m%s\x1b[0m', `📡 API available at: http://localhost:${PORT}/api`);
-      console.log('\x1b[33m%s\x1b[0m', '⚠️ Make sure your frontend is configured to connect to this URL');
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log('📧 Email functionality is available even without database');
     });
+
+    // Try to initialize database schema, but don't let failure stop the server
+    try {
+      // Initialize database schema
+      await initializeSchema();
+      
+      // Check if schema is properly initialized
+      const schemaStatus = await checkSchema();
+      console.log('✅ Schema status:', schemaStatus);
+    } catch (dbError) {
+      console.error('⚠️ Database connection failed:', dbError.message);
+      console.warn('⚠️ Running in limited mode - some features will not work');
+      console.log('✅ Email functionality is still available');
+    }
+    
+    // Start email checker service if enabled
+    if (process.env.ENABLE_EMAIL_CHECKER === 'true') {
+      try {
+        const { startEmailChecker } = require('./utils/emailChecker');
+        startEmailChecker();
+        console.log('✅ Email checker service started');
+      } catch (emailError) {
+        console.error('❌ Failed to start email checker:', emailError.message);
+        console.log('⚠️ Email checking is disabled');
+      }
+    } else {
+      console.log('ℹ️ Email checker is disabled in .env');
+    }
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error('❌ Failed to start server:', error);
     process.exit(1);
   }
 };
 
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err) => {
-  console.error('Unhandled Rejection:', err);
-  process.exit(1);
-});
-
 // Start the server
-startServer(); 
+startServer();
+
+// Export app for testing
+module.exports.app = app; 

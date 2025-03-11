@@ -75,10 +75,42 @@ export const NotificationProvider = ({ children }) => {
   };
 
   const playNotificationSound = () => {
-    const audio = new Audio('/notification-sound.mp3');
-    audio.play().catch(error => {
-      console.log('Failed to play notification sound:', error);
-    });
+    try {
+      // Use a data URL for a simple beep sound instead of an external file
+      // This ensures the sound will always work without external dependencies
+      const soundDataUrl = 'data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU9vT18A';
+      
+      // Create audio context for better browser compatibility
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (AudioContext) {
+        const audioCtx = new AudioContext();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(800, audioCtx.currentTime); // frequency in hertz
+        
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.5);
+        return;
+      }
+      
+      // Fallback to Audio API if AudioContext is not available
+      const audio = new Audio(soundDataUrl);
+      audio.volume = 0.2; // Lower volume
+      audio.play().catch(error => {
+        console.log('Fallback notification sound failed:', error);
+      });
+    } catch (error) {
+      console.log('Unable to play notification sound:', error);
+      // Silent fail - notifications should work even without sound
+    }
   };
 
   const addNotification = (type, message, data = {}) => {

@@ -12,14 +12,15 @@ const PDFDocument = require('pdfkit');
 const EMAIL_USER = process.env.EMAIL_USER || 'invoice.tester11@gmail.com';
 const EMAIL_PASS = process.env.EMAIL_PASS || 'vmen hgvm rskq zjpx';
 const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';
+const SMTP_PORT = process.env.SMTP_PORT || 587;
 const IMAP_HOST = process.env.IMAP_HOST || 'imap.gmail.com';
 const COMPANY_NAME = process.env.COMPANY_NAME || 'AAM Inventory'; // Add company name configuration
 
 // Create reusable transporter for sending emails
 const transporter = nodemailer.createTransport({
   host: EMAIL_HOST,
-  port: 587,
-  secure: false, // true for 465, false for other ports
+  port: SMTP_PORT,
+  secure: SMTP_PORT === 465, // true for 465, false for other ports
   auth: {
     user: EMAIL_USER,
     pass: EMAIL_PASS,
@@ -28,6 +29,11 @@ const transporter = nodemailer.createTransport({
     rejectUnauthorized: false // Disable SSL verification for development
   }
 });
+
+// Verify SMTP connection on startup
+transporter.verify()
+  .then(() => console.log('✅ SMTP connection verified - Email sending is ready'))
+  .catch(err => console.error('❌ SMTP connection error:', err.message));
 
 // Create IMAP client for reading emails
 const imapConfig = {
@@ -75,7 +81,7 @@ const generatePOPdf = async (purchaseOrder) => {
       // Logo and header information
       try {
         // Try to load logo from project directory
-        const logoPath = path.join(__dirname, '../../src/images/logo.png');
+        const logoPath = path.join(__dirname, '../../src/images/image copy.png');
         if (fs.existsSync(logoPath)) {
           doc.image(logoPath, 50, 50, { width: 50 });
         } else {
@@ -360,7 +366,38 @@ const generatePOPdf = async (purchaseOrder) => {
 // Controller methods
 exports.sendPurchaseOrderEmail = async (req, res) => {
   try {
+    console.log('\n=== SEND PURCHASE ORDER EMAIL REQUEST ===');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    
     const { poId, to, subject, message } = req.body;
+    
+    // Validate required fields
+    if (!poId) {
+      console.error('Missing poId in request');
+      return res.status(400).json({ success: false, message: 'Missing Purchase Order ID' });
+    }
+    
+    if (!to) {
+      console.error('Missing recipient (to) in request');
+      return res.status(400).json({ success: false, message: 'Missing recipient email address' });
+    }
+    
+    if (!subject) {
+      console.error('Missing subject in request');
+      return res.status(400).json({ success: false, message: 'Missing email subject' });
+    }
+    
+    if (!message) {
+      console.error('Missing message in request');
+      return res.status(400).json({ success: false, message: 'Missing email message' });
+    }
+    
+    console.log('\n📧 EMAIL SEND REQUEST 📧');
+    console.log('----------------------------------');
+    console.log(`🆔 PO ID: ${poId}`);
+    console.log(`📤 To: ${to}`);
+    console.log(`📑 Subject: ${subject}`);
+    console.log('----------------------------------\n');
     
     // Get PO data from database (mocked for now)
     const purchaseOrder = {
@@ -380,42 +417,63 @@ exports.sendPurchaseOrderEmail = async (req, res) => {
       ]
     };
     
+    console.log('Generating PDF...');
     // Generate PDF
     const { filepath, filename } = await generatePOPdf(purchaseOrder);
+    console.log(`PDF generated: ${filename}`);
     
+    console.log('Sending email with attachment...');
     // Send email with PDF attachment
-    const info = await transporter.sendMail({
-      from: `"${COMPANY_NAME}" <${EMAIL_USER}>`,
-      to,
-      subject,
-      text: message,
-      html: message.replace(/\n/g, '<br>'),
-      attachments: [
-        {
-          filename,
-          path: filepath
+    try {
+      const info = await transporter.sendMail({
+        from: `"${COMPANY_NAME}" <${EMAIL_USER}>`,
+        to,
+        subject,
+        text: message,
+        html: message.replace(/\n/g, '<br>'),
+        attachments: [
+          {
+            filename,
+            path: filepath
+          }
+        ]
+      });
+      
+      console.log('✅ Email sent successfully!');
+      console.log('Message ID:', info.messageId);
+      
+      // Update PO status in database (mocked)
+      // await updatePurchaseOrderStatus(poId, 'sent');
+      
+      res.status(200).json({
+        success: true,
+        message: 'Purchase order email sent successfully',
+        data: {
+          messageId: info.messageId,
+          poId
         }
-      ]
-    });
-    
-    console.log('Message sent:', info.messageId);
-    
-    // Update PO status in database (mocked)
-    // await updatePurchaseOrderStatus(poId, 'sent');
-    
-    res.status(200).json({
-      success: true,
-      message: 'Purchase order email sent successfully',
-      data: {
-        messageId: info.messageId,
-        poId
-      }
-    });
+      });
+    } catch (emailError) {
+      console.error('❌ Error sending email:', emailError);
+      throw emailError; // Re-throw to be caught by the outer catch block
+    }
   } catch (error) {
     console.error('Error sending email:', error);
+    
+    // Provide more specific error messages based on the error type
+    let errorMessage = 'Failed to send purchase order email';
+    
+    if (error.code === 'EAUTH') {
+      errorMessage = 'Email authentication failed. Please check email credentials.';
+    } else if (error.code === 'ECONNREFUSED') {
+      errorMessage = 'Connection to email server refused. Please check server configuration.';
+    } else if (error.code === 'ETIMEDOUT') {
+      errorMessage = 'Connection to email server timed out. Please try again later.';
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Failed to send purchase order email',
+      message: errorMessage,
       error: error.message
     });
   }
@@ -534,13 +592,19 @@ exports.checkEmails = async (req, res) => {
               }
               
               if (!results || !results.length) {
-                console.log('No unread emails, searching for recent emails in the last 24 hours');
+                console.log('No unread emails, searching for recent emails in the last 7 days');
                 
-                // If no unread emails, search for all emails from the last 24 hours
-                const yesterday = new Date();
-                yesterday.setDate(yesterday.getDate() - 1);
+                // If no unread emails, search for all emails from the last 7 days
+                const sevenDaysAgo = new Date();
+                sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
                 
-                imap.search(['SINCE', yesterday], (err, recentResults) => {
+                // Format the date as required by IMAP library: DD-MMM-YYYY
+                // Month needs to be the three-letter representation in English
+                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const formattedDate = `${sevenDaysAgo.getDate()}-${months[sevenDaysAgo.getMonth()]}-${sevenDaysAgo.getFullYear()}`;
+                
+                console.log(`Searching for ALL emails since: ${formattedDate}`);
+                imap.search(['ALL', ['SINCE', formattedDate]], (err, recentResults) => {
                   if (err) {
                     reject(err);
                     return;

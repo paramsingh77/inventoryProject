@@ -16,12 +16,17 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import MainLayout from './components/Layout/MainLayout';
 import { addTestButton } from './utils/testWorkflow';
+import { addBackendTestButton } from './utils/testBackend';
 
 const App = () => {
     useEffect(() => {
-        // Add test button in development mode
+        // Add test buttons in development mode
         if (process.env.NODE_ENV === 'development') {
+            // Add workflow test button
             addTestButton();
+            
+            // Add backend diagnostic test button
+            addBackendTestButton();
         }
     }, []);
 

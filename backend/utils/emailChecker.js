@@ -5,6 +5,7 @@ const path = require('path');
 const { promisify } = require('util');
 const writeFileAsync = promisify(fs.writeFile);
 const mkdirAsync = promisify(fs.mkdir);
+const { io } = require('../server'); // Import Socket.IO from server
 
 // Email configuration - Use environment variables in production
 const EMAIL_USER = process.env.EMAIL_USER || 'invoice.tester11@gmail.com';
@@ -59,9 +60,17 @@ const processEmailsWithImap = (imap) => {
         if (!results || !results.length) {
           console.log('No unread emails found');
           
-          // For testing: If no unread emails, search for recent emails
-          console.log('Searching for recent emails instead...');
-          imap.search(['ALL', ['SINCE', new Date(Date.now() - 24*60*60*1000).toISOString()]], (err, recentResults) => {
+          // For testing: If no unread emails, search for ALL emails from the last 7 days
+          console.log('Searching for ALL emails from the last 7 days...');
+          
+          // Format the date as required by IMAP library: DD-MMM-YYYY
+          const sevenDaysAgo = new Date();
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7); // Last 7 days instead of just 1
+          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          const formattedDate = `${sevenDaysAgo.getDate()}-${months[sevenDaysAgo.getMonth()]}-${sevenDaysAgo.getFullYear()}`;
+          
+          console.log(`Searching for emails since: ${formattedDate}`);
+          imap.search(['ALL', ['SINCE', formattedDate]], (err, recentResults) => {
             if (err) {
               console.error('Error searching recent emails:', err);
               reject(err);
@@ -219,19 +228,17 @@ const processEmailResults = (imap, results, resolve, reject) => {
               // Emit an event for the frontend
               console.log(`New invoice received: ${invoiceNumber} for PO: ${poReference}`);
               
-              // In a real app with WebSockets, you would emit an event like this:
-              // io.emit('newInvoice', { 
-              //   type: 'NEW_INVOICE',
-              //   poReference,
-              //   invoice
-              // });
-              
-              // For now, we'll just log it
-              console.log('Invoice event would be emitted:', {
-                type: 'NEW_INVOICE',
-                poReference,
-                invoice
-              });
+              // Emit the event using Socket.IO
+              if (io) {
+                io.emit('newInvoice', { 
+                  type: 'NEW_INVOICE',
+                  poReference,
+                  invoice
+                });
+                console.log('Invoice event emitted via Socket.IO');
+              } else {
+                console.log('Socket.IO not available, invoice event not emitted');
+              }
             }
           }
         }
@@ -332,6 +339,7 @@ const checkEmailsWithRetry = async () => {
 const checkEmailsWithConfig = (config) => {
   return new Promise((resolve, reject) => {
     try {
+      console.log(`Connecting to IMAP server ${config.host} with user ${config.user}...`);
       const imap = new Imap(config);
       
       // Handle connection errors
@@ -342,8 +350,12 @@ const checkEmailsWithConfig = (config) => {
       
       // Handle successful connection
       imap.once('ready', () => {
+        console.log(`Successfully connected to IMAP server as ${config.user}`);
         processEmailsWithImap(imap)
-          .then(resolve)
+          .then((result) => {
+            console.log(`Email processing complete. Found ${result.count || 0} emails.`);
+            resolve(result);
+          })
           .catch(reject)
           .finally(() => {
             try {

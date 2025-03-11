@@ -17,6 +17,7 @@ import { motion } from 'framer-motion';
 import { useNotification } from '../../../context/NotificationContext';
 import CreatePO from './CreatePO';
 import POInvoices from './POInvoices';
+import socket from '../../../utils/socket';
 
 const PurchaseOrders = () => {
   const [orders, setOrders] = useState([
@@ -97,15 +98,48 @@ const PurchaseOrders = () => {
           return order;
         }));
         addNotification('success', `Invoice received for PO ${event.detail.poReference}`);
+      } else if (event.detail?.type === 'UPDATE_PO_STATUS' && event.detail.poReference) {
+        // Update the PO status based on the event
+        setOrders(prev => prev.map(order => {
+          if (order.poNumber === event.detail.poReference) {
+            return {
+              ...order,
+              status: event.detail.status,
+              hasInvoice: true
+            };
+          }
+          return order;
+        }));
+        addNotification('info', `PO ${event.detail.poReference} status updated to ${event.detail.status}`);
       }
     };
 
     window.addEventListener('purchaseOrder', handleNewPO);
     window.addEventListener('invoice', handleNewInvoice);
     
+    // Socket.IO event listeners
+    socket.on('newInvoice', (data) => {
+      console.log('Socket.IO newInvoice event received:', data);
+      if (data.type === 'NEW_INVOICE' && data.poReference) {
+        // Update the PO status when an invoice is received via Socket.IO
+        setOrders(prev => prev.map(order => {
+          if (order.poNumber === data.poReference) {
+            return {
+              ...order,
+              status: 'Approved', // Change status to Approved when invoice is received
+              hasInvoice: true
+            };
+          }
+          return order;
+        }));
+        addNotification('success', `Invoice received for PO ${data.poReference}`);
+      }
+    });
+    
     return () => {
       window.removeEventListener('purchaseOrder', handleNewPO);
       window.removeEventListener('invoice', handleNewInvoice);
+      socket.off('newInvoice');
     };
   }, [addNotification]);
 
@@ -153,6 +187,11 @@ const PurchaseOrders = () => {
     if (status === 'all') return orders.length;
     return orders.filter(order => order.status.toLowerCase() === status.toLowerCase()).length;
   };
+
+  // Debug: Log orders to console to verify status changes
+  useEffect(() => {
+    console.log('Current orders:', orders);
+  }, [orders]);
 
   return (
     <motion.div

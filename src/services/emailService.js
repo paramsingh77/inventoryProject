@@ -3,9 +3,11 @@ import axios from 'axios';
 // Try multiple possible backend URLs
 // The backend might be running on a different port
 const POSSIBLE_BACKEND_URLS = [
+  'http://localhost:2000/api',  // Primary backend server (port 2000)
   '/api',                       // Same origin (when using proxy in package.json)
   'http://localhost:5000/api',  // Common Node.js port
   'http://localhost:3001/api',  // Another common port
+  'http://127.0.0.1:2000/api',  // Using IP with port 2000
   'http://127.0.0.1:5000/api',  // Using IP instead of localhost
   'http://127.0.0.1:3001/api'   // Using IP with alternate port
 ];
@@ -47,13 +49,24 @@ testBackendConnection().then(url => {
  */
 export const sendPurchaseOrderEmail = async (poId, emailData) => {
   try {
+    console.log('Sending PO email:', {
+      poId,
+      to: emailData.to,
+      subject: emailData.subject
+    });
+    
     const response = await axios.post(`${API_URL}/email/send-po`, {
       poId,
       ...emailData
+    }, {
+      withCredentials: true,
+      timeout: 30000 // 30 seconds timeout
     });
+    
+    console.log('Successfully sent PO:', response.data);
     return response.data;
   } catch (error) {
-    console.error('Error sending PO email:', error);
+    console.error('Error sending PO email:', error.response?.data || error.message);
     throw error;
   }
 };
@@ -89,29 +102,19 @@ export const sendPurchaseOrderWithPdf = async (poId, emailData, pdfBlob) => {
       fileName
     });
     
-    // Send with FormData - note we can't use axios.post({ data }) format here
+    // Send with FormData
     const response = await axios.post(`${API_URL}/email/send-po-with-file`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       },
-      // Add these options to help with CORS and credentials
       withCredentials: true,
       timeout: 30000 // 30 seconds timeout
     });
     
+    console.log('Successfully sent PO:', response.data);
     return response.data;
   } catch (error) {
-    console.error('Error sending PO with PDF:', error);
-    // Log more details about the error
-    if (error.response) {
-      // The request was made and the server responded with a status code
-      // that falls out of the range of 2xx
-      console.error('Error response data:', error.response.data);
-      console.error('Error response status:', error.response.status);
-    } else if (error.request) {
-      // The request was made but no response was received
-      console.error('No response received:', error.request);
-    }
+    console.error('Error sending PO email:', error.response?.data || error.message);
     throw error;
   }
 };

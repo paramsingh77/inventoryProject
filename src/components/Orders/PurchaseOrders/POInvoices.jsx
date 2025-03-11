@@ -15,6 +15,7 @@ import { motion } from 'framer-motion';
 import PODocument from './PODocument';
 import { purchaseOrders as samplePOs } from '../../../data/samplePOData';
 import { useNotification } from '../../../context/NotificationContext';
+import socket from '../../../utils/socket';
 
 const POInvoices = () => {
   const [invoices, setInvoices] = useState([]);
@@ -50,23 +51,63 @@ const POInvoices = () => {
           }
           return prev;
         });
-        
-        // Dispatch event to update PO status
-        const poUpdateEvent = new CustomEvent('invoice', {
-          detail: {
-            type: 'NEW_INVOICE',
-            poReference: event.detail.poReference,
-            invoice: newInvoice
-          }
-        });
-        window.dispatchEvent(poUpdateEvent);
       }
     };
 
+    // Listen for invoice status changes
+    const handleInvoiceStatusChange = (event) => {
+      if (
+        event.detail?.type === 'INVOICE_APPROVED' || 
+        event.detail?.type === 'INVOICE_REJECTED'
+      ) {
+        const { invoice } = event.detail;
+        
+        setInvoices(prev => prev.map(inv => {
+          if (inv.invoiceNumber === invoice.invoiceNumber) {
+            return { ...inv, status: invoice.status };
+          }
+          return inv;
+        }));
+        
+        const action = event.detail.type === 'INVOICE_APPROVED' ? 'approved' : 'rejected';
+        addNotification('success', `Invoice ${invoice.invoiceNumber} has been ${action}`);
+      }
+    };
+
+    // Add Socket.IO event listener for new invoices
+    socket.on('newInvoice', (data) => {
+      console.log('Socket.IO newInvoice event received in POInvoices:', data);
+      if (data.type === 'NEW_INVOICE') {
+        const newInvoice = {
+          ...data.invoice,
+          status: 'Received',
+          poReference: data.poReference,
+          receivedDate: new Date().toISOString()
+        };
+        
+        setInvoices(prev => {
+          // Check if we already have this invoice
+          const exists = prev.some(inv => 
+            inv.invoiceNumber === newInvoice.invoiceNumber || 
+            (inv.poReference === newInvoice.poReference && newInvoice.poReference)
+          );
+          
+          if (!exists) {
+            addNotification('success', 'New invoice received via Socket.IO');
+            return [newInvoice, ...prev];
+          }
+          return prev;
+        });
+      }
+    });
+
     window.addEventListener('invoice', handleNewInvoice);
+    window.addEventListener('invoice', handleInvoiceStatusChange);
     
     return () => {
       window.removeEventListener('invoice', handleNewInvoice);
+      window.removeEventListener('invoice', handleInvoiceStatusChange);
+      socket.off('newInvoice');
     };
   }, [addNotification]);
 
@@ -105,48 +146,71 @@ const POInvoices = () => {
     }
   };
 
+  // Add a function to dispatch an event to update the PO status
+  const updatePOStatus = (poReference, status) => {
+    // Dispatch event to update PO status
+    const poUpdateEvent = new CustomEvent('invoice', {
+      detail: {
+        type: 'UPDATE_PO_STATUS',
+        poReference,
+        status
+      }
+    });
+    window.dispatchEvent(poUpdateEvent);
+  };
+
   const handleApproveInvoice = (invoice) => {
+    // Update invoice status
     setInvoices(prev => prev.map(inv => {
       if (inv.invoiceNumber === invoice.invoiceNumber) {
-        const updatedInvoice = { ...inv, status: 'Approved' };
-        
-        // Dispatch event to update PO status
-        const poUpdateEvent = new CustomEvent('invoice', {
-          detail: {
-            type: 'INVOICE_APPROVED',
-            poReference: invoice.poReference,
-            invoice: updatedInvoice
-          }
-        });
-        window.dispatchEvent(poUpdateEvent);
-        
-        addNotification('success', `Invoice ${invoice.invoiceNumber} approved`);
-        return updatedInvoice;
+        return { ...inv, status: 'Approved' };
       }
       return inv;
     }));
+    
+    // Update PO status
+    if (invoice.poReference) {
+      updatePOStatus(invoice.poReference, 'Approved');
+    }
+    
+    // Dispatch event for invoice status change
+    const invoiceEvent = new CustomEvent('invoice', {
+      detail: {
+        type: 'INVOICE_APPROVED',
+        poReference: invoice.poReference,
+        invoice: { ...invoice, status: 'Approved' }
+      }
+    });
+    window.dispatchEvent(invoiceEvent);
+    
+    addNotification('success', `Invoice ${invoice.invoiceNumber} has been approved`);
   };
 
   const handleRejectInvoice = (invoice) => {
+    // Update invoice status
     setInvoices(prev => prev.map(inv => {
       if (inv.invoiceNumber === invoice.invoiceNumber) {
-        const updatedInvoice = { ...inv, status: 'Rejected' };
-        
-        // Dispatch event to update PO status
-        const poUpdateEvent = new CustomEvent('invoice', {
-          detail: {
-            type: 'INVOICE_REJECTED',
-            poReference: invoice.poReference,
-            invoice: updatedInvoice
-          }
-        });
-        window.dispatchEvent(poUpdateEvent);
-        
-        addNotification('warning', `Invoice ${invoice.invoiceNumber} rejected`);
-        return updatedInvoice;
+        return { ...inv, status: 'Rejected' };
       }
       return inv;
     }));
+    
+    // Update PO status
+    if (invoice.poReference) {
+      updatePOStatus(invoice.poReference, 'Rejected');
+    }
+    
+    // Dispatch event for invoice status change
+    const invoiceEvent = new CustomEvent('invoice', {
+      detail: {
+        type: 'INVOICE_REJECTED',
+        poReference: invoice.poReference,
+        invoice: { ...invoice, status: 'Rejected' }
+      }
+    });
+    window.dispatchEvent(invoiceEvent);
+    
+    addNotification('warning', `Invoice ${invoice.invoiceNumber} has been rejected`);
   };
 
   const getStatusBadge = (status) => {

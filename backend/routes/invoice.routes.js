@@ -5,32 +5,21 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Create upload directory if it doesn't exist
-const uploadDir = path.join(__dirname, '../files/temp');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadsDir)) {
+  console.log('Creating uploads directory:', uploadsDir);
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    // Ensure directory exists
-    try {
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-      cb(null, uploadDir);
-    } catch (error) {
-      console.error('Error creating upload directory:', error);
-      cb(error, null);
-    }
+    cb(null, uploadsDir);
   },
   filename: function (req, file, cb) {
-    // Generate unique filename with timestamp
-    const timestamp = Date.now();
-    const originalName = path.parse(file.originalname).name;
-    const filename = `po-${originalName}-${timestamp}.pdf`;
-    cb(null, filename);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
@@ -52,6 +41,8 @@ const upload = multer({
 
 // Custom middleware to handle multer errors
 const handleUpload = (req, res, next) => {
+  console.log('Starting file upload process...');
+  
   upload(req, res, function (err) {
     if (err instanceof multer.MulterError) {
       // A Multer error occurred when uploading
@@ -74,6 +65,14 @@ const handleUpload = (req, res, next) => {
         message: err.message
       });
     }
+    
+    // Log successful upload
+    if (req.file) {
+      console.log(`File uploaded successfully: ${req.file.originalname} (${req.file.size} bytes)`);
+    } else {
+      console.warn('No file was uploaded, but no error was thrown');
+    }
+    
     // Everything went fine
     next();
   });
