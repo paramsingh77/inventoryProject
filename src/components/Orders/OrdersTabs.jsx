@@ -27,7 +27,8 @@ import {
     faFilter,
     faArrowRight,
     faArrowLeft,
-    faShoppingCart
+    faShoppingCart,
+    faInfoCircle
 } from '@fortawesome/free-solid-svg-icons';
 import axios from 'axios';
 
@@ -124,6 +125,10 @@ const OrdersTabs = () => {
     const [inventoryProducts, setInventoryProducts] = useState([]);
     const [filteredProducts, setFilteredProducts] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [vendors, setVendors] = useState(['Dell', 'HP', 'Lenovo', 'Apple', 'Microsoft', 'VMware', 'ASUS', 'Custom Build']);
+
+    // Add new state for bulk selection
+    const [allSelected, setAllSelected] = useState(false);
 
     // Mock data for demonstration
     useEffect(() => {
@@ -175,22 +180,107 @@ const OrdersTabs = () => {
     const fetchInventoryProducts = async () => {
         try {
             setLoading(true);
-            const response = await axios.get('/api/devices/all');
-            const products = response.data.map(device => ({
-                id: device.id,
-                sku: device.serial_number,
-                name: device.device_hostname,
-                category: device.device_type,
-                price: 0, // You'll need to add price to your inventory schema
-                vendor: device.device_model?.split(' ')[0] || 'Unknown', // Extract vendor from model
-                quantity: 1,
-                description: device.device_description,
-                status: device.status
-            }));
+            console.log("Fetching inventory products...");
+            
+            let products = [];
+            try {
+                const response = await axios.get('/api/devices/all');
+                console.log("API Response:", response.data?.length || 0, "devices found");
+                
+                // Extract vendor from device_model more accurately
+                products = response.data.map(device => {
+                    // More accurate vendor extraction logic
+                    let vendor = 'Unknown';
+                    const model = device.device_model || '';
+                    
+                    // Standard vendor detection
+                    if (model.toLowerCase().includes('dell') || 
+                        model.toLowerCase().includes('optiplex') || 
+                        model.toLowerCase().includes('latitude') || 
+                        model.toLowerCase().includes('inspiron') || 
+                        model.toLowerCase().includes('vostro')) {
+                        vendor = 'Dell';
+                    } else if (model.toLowerCase().includes('hp') || 
+                        model.toLowerCase().includes('elitebook') || 
+                        model.toLowerCase().includes('compaq') || 
+                        model.toLowerCase().includes('probook') || 
+                        model.toLowerCase().includes('prodesk')) {
+                        vendor = 'HP';
+                    } else if (model.toLowerCase().includes('lenovo') || 
+                        model.toLowerCase().includes('thinkpad') || 
+                        model.toLowerCase().includes('thinkcentre') || 
+                        model.toLowerCase().includes('12e3') ||
+                        model.toLowerCase().includes('20tds')) {
+                        vendor = 'Lenovo';
+                    } else if (model.toLowerCase().includes('vmware') || 
+                        model.toLowerCase().includes('virtual platform')) {
+                        vendor = 'VMware';
+                    } else if (model.toLowerCase().includes('apple') || 
+                        model.toLowerCase().includes('mac')) {
+                        vendor = 'Apple';
+                    } else if (model.toLowerCase().includes('microsoft') || 
+                        model.toLowerCase().includes('surface')) {
+                        vendor = 'Microsoft';
+                    } else if (model.toLowerCase().includes('asus')) {
+                        vendor = 'ASUS';
+                    } else if (model.toLowerCase().includes('stealth')) {
+                        vendor = 'Custom Build';
+                    }
+                    
+                    // Calculate a unit price based on device type (for demo purposes)
+                    let price = 0;
+                    if (device.device_type?.toLowerCase().includes('laptop')) {
+                        price = 1200 + Math.floor(Math.random() * 800);
+                    } else if (device.device_type?.toLowerCase().includes('desktop')) {
+                        price = 800 + Math.floor(Math.random() * 600);
+                    } else if (device.device_type?.toLowerCase().includes('server')) {
+                        price = 2500 + Math.floor(Math.random() * 1500);
+                    } else if (device.device_type?.toLowerCase().includes('virtual')) {
+                        price = 400 + Math.floor(Math.random() * 300);
+                    } else {
+                        price = 500 + Math.floor(Math.random() * 500);
+                    }
+                    
+                    return {
+                        id: device.id,
+                        sku: device.serial_number || `SKU-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+                        name: device.device_hostname || 'Unnamed Device',
+                        model: device.device_model || 'Unknown Model',
+                        fullName: `${device.device_model || 'Unknown'} - ${device.device_hostname || 'Unnamed'}`,
+                        category: device.device_type || 'Unknown Type',
+                        price: price,
+                        vendor: vendor,
+                        quantity: 0,
+                        description: device.device_description || `${vendor} ${device.device_model || 'Device'}`,
+                        status: device.status || 'active',
+                        specs: `${device.device_cpu || ''} ${device.operating_system || ''}`.trim() || 'No specifications available'
+                    };
+                });
+            } catch (apiError) {
+                console.error("API Error:", apiError);
+                // Use fallback mock data if API fails
+                products = vendorDevices;
+            }
+            
+            console.log("Total products after processing:", products.length);
             setInventoryProducts(products);
             setFilteredProducts(products);
+            
+            // Extract unique vendors for the dropdown, but keep existing default vendors
+            if (products.length > 0) {
+                const productVendors = [...new Set(products.map(p => p.vendor))].filter(v => v && v !== 'Unknown').sort();
+                console.log("Extracted vendors:", productVendors);
+                
+                // Combine with existing vendors but remove duplicates
+                const uniqueVendors = [...new Set([...vendors, ...productVendors])].sort();
+                console.log("Final vendor list:", uniqueVendors);
+                setVendors(uniqueVendors);
+            }
         } catch (error) {
-            console.error('Error fetching inventory:', error);
+            console.error('Error in fetchInventoryProducts:', error);
+            // Fallback to mock data if there's an error
+            setInventoryProducts(vendorDevices);
+            setFilteredProducts(vendorDevices);
         } finally {
             setLoading(false);
         }
@@ -207,7 +297,10 @@ const OrdersTabs = () => {
             const matchesSearch = !searchTerm || 
                 (product.name?.toLowerCase() || '').includes((searchTerm || '').toLowerCase()) ||
                 (product.sku?.toLowerCase() || '').includes((searchTerm || '').toLowerCase()) ||
-                (product.category?.toLowerCase() || '').includes((searchTerm || '').toLowerCase());
+                (product.category?.toLowerCase() || '').includes((searchTerm || '').toLowerCase()) ||
+                (product.model?.toLowerCase() || '').includes((searchTerm || '').toLowerCase()) ||
+                (product.specs?.toLowerCase() || '').includes((searchTerm || '').toLowerCase()) ||
+                (product.description?.toLowerCase() || '').includes((searchTerm || '').toLowerCase());
             
             const matchesVendor = !vendorName || 
                 ((product.vendor || '').toLowerCase() === (vendorName || '').toLowerCase());
@@ -262,11 +355,14 @@ const OrdersTabs = () => {
 
     const handleDeviceSelection = (deviceId, isSelected) => {
         if (isSelected) {
-            const device = vendorDevices.find(d => d.id === deviceId);
-            setNewOrder(prev => ({
-                ...prev,
-                selectedDevices: [...prev.selectedDevices, { ...device, quantity: 1 }]
-            }));
+            // Find the device from filteredProducts instead of vendorDevices
+            const device = filteredProducts.find(d => d.id === deviceId);
+            if (device) {
+                setNewOrder(prev => ({
+                    ...prev,
+                    selectedDevices: [...prev.selectedDevices, { ...device, quantity: 0 }]
+                }));
+            }
         } else {
             setNewOrder(prev => ({
                 ...prev,
@@ -275,11 +371,39 @@ const OrdersTabs = () => {
         }
     };
 
+    // Add this function to handle selecting/deselecting all products
+    const handleSelectAll = (e) => {
+        const isChecked = e.target.checked;
+        setAllSelected(isChecked);
+        
+        if (isChecked) {
+            // Select all filtered products
+            const productsToAdd = filteredProducts
+                .filter(product => !newOrder.selectedDevices.some(d => d.id === product.id))
+                .map(product => ({ ...product, quantity: 0 }));
+            
+            setNewOrder(prev => ({
+                ...prev,
+                selectedDevices: [...prev.selectedDevices, ...productsToAdd]
+            }));
+        } else {
+            // Deselect all products
+            setNewOrder(prev => ({
+                ...prev,
+                selectedDevices: []
+            }));
+        }
+    };
+
+    // Fix the updateDeviceQuantity function to handle possible NaN values
     const updateDeviceQuantity = (deviceId, quantity) => {
+        // Ensure quantity is a valid number, defaulting to 0 if NaN
+        const validQuantity = isNaN(quantity) ? 0 : quantity;
+        
         setNewOrder(prev => ({
             ...prev,
             selectedDevices: prev.selectedDevices.map(device =>
-                device.id === deviceId ? { ...device, quantity } : device
+                device.id === deviceId ? { ...device, quantity: validQuantity } : device
             )
         }));
     };
@@ -287,7 +411,7 @@ const OrdersTabs = () => {
     const addCustomItem = () => {
         setNewOrder(prev => ({
             ...prev,
-            customItems: [...prev.customItems, { description: '', quantity: 1, price: 0 }]
+            customItems: [...prev.customItems, { description: '', quantity: 0, price: 0 }]
         }));
     };
 
@@ -706,9 +830,9 @@ const OrdersTabs = () => {
                                                         required
                                                     >
                                                         <option value="">Select Vendor</option>
-                                                        <option value="HP">HP</option>
-                                                        <option value="Dell">Dell</option>
-                                                        <option value="Lenovo">Lenovo</option>
+                                                        {vendors.map(vendor => (
+                                                            <option key={vendor} value={vendor}>{vendor}</option>
+                                                        ))}
                                                     </Form.Select>
                                                 </Form.Group>
                                             </Col>
@@ -779,7 +903,7 @@ const OrdersTabs = () => {
                                                         <FontAwesomeIcon icon={faSearch} className="text-muted" />
                                                     </InputGroup.Text>
                                                     <Form.Control
-                                                        placeholder="Search products by name, SKU, or category..."
+                                                        placeholder="Search by model, hostname, specs, or serial number..."
                                                         value={productSearchTerm}
                                                         onChange={(e) => setProductSearchTerm(e.target.value)}
                                                     />
@@ -790,11 +914,18 @@ const OrdersTabs = () => {
                                                 <Table hover>
                                                     <thead className="bg-light">
                                                         <tr>
-                                                            <th>Select</th>
-                                                            <th>SKU</th>
-                                                            <th>Product Name</th>
-                                                            <th>Category</th>
-                                                            <th>Status</th>
+                                                            <th>
+                                                                <Form.Check
+                                                                    type="checkbox"
+                                                                    onChange={handleSelectAll}
+                                                                    checked={allSelected}
+                                                                    label="Select All"
+                                                                />
+                                                            </th>
+                                                            <th>SKU/Serial</th>
+                                                            <th>Device Info</th>
+                                                            <th>Type</th>
+                                                            <th>Price ($)</th>
                                                             <th>Quantity</th>
                                                         </tr>
                                                     </thead>
@@ -802,7 +933,12 @@ const OrdersTabs = () => {
                                                         {loading ? (
                                                             <tr>
                                                                 <td colSpan="6" className="text-center py-4">
-                                                                    Loading products...
+                                                                    <div className="d-flex justify-content-center">
+                                                                        <div className="spinner-border text-primary" role="status">
+                                                                            <span className="visually-hidden">Loading products...</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="mt-2">Loading products...</div>
                                                                 </td>
                                                             </tr>
                                                         ) : newOrder.vendorName ? (
@@ -818,20 +954,39 @@ const OrdersTabs = () => {
                                                                             />
                                                                         </td>
                                                                         <td>{product.sku}</td>
-                                                                        <td>{product.name}</td>
-                                                                        <td>{product.category}</td>
                                                                         <td>
-                                                                            <Badge bg={product.status === 'active' ? 'success' : 'secondary'}>
-                                                                                {product.status}
+                                                                            <div className="fw-medium">{product.name}</div>
+                                                                            <small className="text-muted d-block">
+                                                                                <span className="fw-medium">Model:</span> {product.model}
+                                                                            </small>
+                                                                            <small className="text-muted d-block">{product.specs}</small>
+                                                                        </td>
+                                                                        <td>
+                                                                            <Badge 
+                                                                                bg={
+                                                                                    product.category?.toLowerCase().includes('laptop') ? 'info' :
+                                                                                    product.category?.toLowerCase().includes('desktop') ? 'primary' :
+                                                                                    product.category?.toLowerCase().includes('server') ? 'danger' :
+                                                                                    'secondary'
+                                                                                }
+                                                                                className="text-white"
+                                                                            >
+                                                                                {product.category}
                                                                             </Badge>
                                                                         </td>
+                                                                        <td className="fw-medium">${product.price.toFixed(2)}</td>
                                                                         <td style={{ width: '120px' }}>
                                                                             <Form.Control
                                                                                 type="number"
-                                                                                min="1"
-                                                                                value={newOrder.selectedDevices.find(d => d.id === product.id)?.quantity || 1}
-                                                                                onChange={(e) => updateDeviceQuantity(product.id, parseInt(e.target.value))}
+                                                                                min="0"
+                                                                                value={newOrder.selectedDevices.find(d => d.id === product.id)?.quantity || 0}
+                                                                                onChange={(e) => {
+                                                                                    // Convert to number and handle NaN
+                                                                                    const value = e.target.value === '' ? 0 : parseInt(e.target.value);
+                                                                                    updateDeviceQuantity(product.id, value);
+                                                                                }}
                                                                                 disabled={!newOrder.selectedDevices.some(d => d.id === product.id)}
+                                                                                size="sm"
                                                                             />
                                                                         </td>
                                                                     </tr>
@@ -839,6 +994,9 @@ const OrdersTabs = () => {
                                                             ) : (
                                                                 <tr>
                                                                     <td colSpan="6" className="text-center py-4">
+                                                                        <div className="mb-2">
+                                                                            <FontAwesomeIcon icon={faSearch} className="text-muted me-2" size="lg" />
+                                                                        </div>
                                                                         No products found matching your search
                                                                     </td>
                                                                 </tr>
@@ -846,6 +1004,9 @@ const OrdersTabs = () => {
                                                         ) : (
                                                             <tr>
                                                                 <td colSpan="6" className="text-center py-4">
+                                                                    <div className="mb-2">
+                                                                        <FontAwesomeIcon icon={faInfoCircle} className="text-primary me-2" size="lg" />
+                                                                    </div>
                                                                     Please select a vendor to view available products
                                                                 </td>
                                                             </tr>
@@ -886,7 +1047,7 @@ const OrdersTabs = () => {
                                                             <Form.Label>Quantity</Form.Label>
                                                             <Form.Control
                                                                 type="number"
-                                                                min="1"
+                                                                min="0"
                                                                 value={item.quantity}
                                                                 onChange={(e) => updateCustomItem(index, 'quantity', parseInt(e.target.value))}
                                                                 required
@@ -955,70 +1116,102 @@ const OrdersTabs = () => {
                                 transition={{ duration: 0.3 }}
                             >
                                 <div className="mb-4">
-                                    <h6 className="mb-3 fw-medium">Review & Submit</h6>
+                                    <h6 className="mb-3 fw-medium">Review Your Order</h6>
                                     <div className="bg-light rounded-3 p-4">
-                                        {/* Order Summary */}
+                                        <Row className="mb-4">
+                                            <Col md={6}>
+                                                <div className="mb-3">
+                                                    <h6 className="mb-2">Basic Information</h6>
+                                                    <div className="bg-white rounded-3 p-3">
+                                                        <p className="mb-1"><strong>Department:</strong> {newOrder.department}</p>
+                                                        <p className="mb-1"><strong>Request Date:</strong> {newOrder.requestDate}</p>
+                                                        <p className="mb-0"><strong>Priority:</strong> {newOrder.priority}</p>
+                                                    </div>
+                                                </div>
+                                            </Col>
+                                            <Col md={6}>
+                                                <div>
+                                                    <h6 className="mb-2">Vendor Information</h6>
+                                                    <div className="bg-white rounded-3 p-3">
+                                                        <p className="mb-1"><strong>Vendor:</strong> {newOrder.vendorName}</p>
+                                                        <p className="mb-1"><strong>Email:</strong> {newOrder.vendorEmail}</p>
+                                                        <p className="mb-1"><strong>Contact Person:</strong> {newOrder.contactPerson || 'Not specified'}</p>
+                                                        <p className="mb-0"><strong>Phone:</strong> {newOrder.phoneNumber || 'Not specified'}</p>
+                                                    </div>
+                                                </div>
+                                            </Col>
+                                        </Row>
+
                                         <div className="mb-4">
-                                            <h6 className="mb-3">Order Details</h6>
-                                            <Row>
-                                                <Col md={6}>
-                                                    <p><strong>Department:</strong> {newOrder.department}</p>
-                                                    <p><strong>Priority:</strong> {newOrder.priority}</p>
-                                                    <p><strong>Vendor:</strong> {newOrder.vendorName}</p>
-                                                    <p><strong>Contact:</strong> {newOrder.contactPerson}</p>
-                                                </Col>
-                                                <Col md={6}>
-                                                    <p><strong>Email:</strong> {newOrder.vendorEmail}</p>
-                                                    <p><strong>Phone:</strong> {newOrder.phoneNumber}</p>
-                                                    <p><strong>Total Items:</strong> {newOrder.selectedDevices.length + newOrder.customItems.length}</p>
-                                                    <p><strong>Total Amount:</strong> ${calculateTotals().total.toFixed(2)}</p>
-                                                </Col>
-                                            </Row>
+                                            <h6 className="mb-2">Selected Items</h6>
+                                            <div className="bg-white rounded-3 p-3">
+                                                <Table className="table-borderless mb-0">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Item</th>
+                                                            <th>Quantity</th>
+                                                            <th>Unit Price</th>
+                                                            <th className="text-end">Total</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {newOrder.selectedDevices.map((device, index) => (
+                                                            <tr key={`device-${index}`}>
+                                                                <td>
+                                                                    <div>{device.name}</div>
+                                                                    <small className="text-muted d-block">
+                                                                        Model: {device.model} | Type: {device.category} | SKU: {device.sku}
+                                                                    </small>
+                                                                </td>
+                                                                <td>{device.quantity}</td>
+                                                                <td>${device.price.toFixed(2)}</td>
+                                                                <td className="text-end">${(device.price * device.quantity).toFixed(2)}</td>
+                                                            </tr>
+                                                        ))}
+                                                        {newOrder.customItems.map((item, index) => (
+                                                            <tr key={`custom-${index}`}>
+                                                                <td>
+                                                                    <div>{item.description}</div>
+                                                                    <small className="text-muted">Custom Item</small>
+                                                                </td>
+                                                                <td>{item.quantity}</td>
+                                                                <td>${item.price.toFixed(2)}</td>
+                                                                <td className="text-end">${(item.price * item.quantity).toFixed(2)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                    <tfoot className="border-top">
+                                                        <tr>
+                                                            <td colSpan="3" className="text-end"><strong>Subtotal:</strong></td>
+                                                            <td className="text-end">${calculateTotals().subtotal.toFixed(2)}</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td colSpan="3" className="text-end"><strong>Tax (10%):</strong></td>
+                                                            <td className="text-end">${calculateTotals().tax.toFixed(2)}</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td colSpan="3" className="text-end"><strong>Total:</strong></td>
+                                                            <td className="text-end"><strong>${calculateTotals().total.toFixed(2)}</strong></td>
+                                                        </tr>
+                                                    </tfoot>
+                                                </Table>
+                                            </div>
                                         </div>
 
-                                        {/* Selected Items Summary */}
-                                        <div className="mb-4">
-                                            <h6 className="mb-3">Selected Items</h6>
-                                            <Table striped bordered hover size="sm">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Item</th>
-                                                        <th>Quantity</th>
-                                                        <th>Unit Price</th>
-                                                        <th>Total</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {newOrder.selectedDevices.map(device => (
-                                                        <tr key={device.id}>
-                                                            <td>{device.name}</td>
-                                                            <td>{device.quantity}</td>
-                                                            <td>${device.price.toFixed(2)}</td>
-                                                            <td>${(device.price * device.quantity).toFixed(2)}</td>
-                                                        </tr>
-                                                    ))}
-                                                    {newOrder.customItems.map((item, index) => (
-                                                        <tr key={`custom-${index}`}>
-                                                            <td>{item.description}</td>
-                                                            <td>{item.quantity}</td>
-                                                            <td>${item.price.toFixed(2)}</td>
-                                                            <td>${(item.price * item.quantity).toFixed(2)}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </Table>
-                                        </div>
-
-                                        {/* Additional Notes */}
-                                        <div className="mb-4">
-                                            <h6 className="mb-3">Additional Notes</h6>
-                                            <Form.Control
-                                                as="textarea"
-                                                rows={3}
-                                                value={newOrder.notes}
-                                                onChange={(e) => setNewOrder(prev => ({ ...prev, notes: e.target.value }))}
-                                                placeholder="Add any additional notes or instructions..."
-                                            />
+                                        <div>
+                                            <h6 className="mb-2">Notes</h6>
+                                            <div className="bg-white rounded-3 p-3">
+                                                <Form.Control
+                                                    as="textarea"
+                                                    rows={3}
+                                                    placeholder="Add any additional notes for this purchase order..."
+                                                    value={newOrder.notes}
+                                                    onChange={(e) => setNewOrder({
+                                                        ...newOrder,
+                                                        notes: e.target.value
+                                                    })}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
