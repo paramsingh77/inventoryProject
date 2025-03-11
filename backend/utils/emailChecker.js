@@ -13,6 +13,42 @@ const EMAIL_PASS = process.env.EMAIL_PASS || 'vmen hgvm rskq zjpx';
 const IMAP_HOST = process.env.IMAP_HOST || 'imap.gmail.com';
 const CHECK_INTERVAL = process.env.EMAIL_CHECK_INTERVAL || 60000; // 1 minute by default
 
+// Keep track of processed email IDs
+const processedEmails = new Set();
+
+// Path for storing processed email IDs
+const PROCESSED_EMAILS_FILE = path.join(__dirname, '../data/processed_emails.json');
+
+// Load previously processed emails
+const loadProcessedEmails = async () => {
+  try {
+    if (fs.existsSync(PROCESSED_EMAILS_FILE)) {
+      const data = await fs.promises.readFile(PROCESSED_EMAILS_FILE, 'utf8');
+      const emailIds = JSON.parse(data);
+      emailIds.forEach(id => processedEmails.add(id));
+      console.log(`Loaded ${processedEmails.size} previously processed email IDs`);
+    }
+  } catch (error) {
+    console.error('Error loading processed emails:', error);
+  }
+};
+
+// Save processed email IDs
+const saveProcessedEmails = async () => {
+  try {
+    const dir = path.dirname(PROCESSED_EMAILS_FILE);
+    if (!fs.existsSync(dir)) {
+      await mkdirAsync(dir, { recursive: true });
+    }
+    await writeFileAsync(
+      PROCESSED_EMAILS_FILE,
+      JSON.stringify(Array.from(processedEmails))
+    );
+  } catch (error) {
+    console.error('Error saving processed emails:', error);
+  }
+};
+
 // IMAP client configuration
 const imapConfig = {
   user: EMAIL_USER,
@@ -49,8 +85,14 @@ const processEmailsWithImap = (imap) => {
         return;
       }
       
-      // Search for unread emails
-      imap.search(['UNSEEN'], (err, results) => {
+      // Format date for IMAP search
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const formattedDate = `${sevenDaysAgo.getDate()}-${months[sevenDaysAgo.getMonth()]}-${sevenDaysAgo.getFullYear()}`;
+      
+      console.log(`Searching for emails since: ${formattedDate}`);
+      imap.search(['ALL', ['SINCE', formattedDate]], (err, results) => {
         if (err) {
           console.error('Error searching emails:', err);
           reject(err);
@@ -58,39 +100,22 @@ const processEmailsWithImap = (imap) => {
         }
         
         if (!results || !results.length) {
-          console.log('No unread emails found');
-          
-          // For testing: If no unread emails, search for ALL emails from the last 7 days
-          console.log('Searching for ALL emails from the last 7 days...');
-          
-          // Format the date as required by IMAP library: DD-MMM-YYYY
-          const sevenDaysAgo = new Date();
-          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7); // Last 7 days instead of just 1
-          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-          const formattedDate = `${sevenDaysAgo.getDate()}-${months[sevenDaysAgo.getMonth()]}-${sevenDaysAgo.getFullYear()}`;
-          
-          console.log(`Searching for emails since: ${formattedDate}`);
-          imap.search(['ALL', ['SINCE', formattedDate]], (err, recentResults) => {
-            if (err) {
-              console.error('Error searching recent emails:', err);
-              reject(err);
-              return;
-            }
-            
-            if (!recentResults || !recentResults.length) {
-              console.log('No recent emails found either');
-              resolve({ processed: 0 });
-              return;
-            }
-            
-            console.log(`Found ${recentResults.length} recent emails`);
-            processEmailResults(imap, recentResults, resolve, reject);
-          });
+          console.log('No emails found');
+          resolve({ processed: 0 });
           return;
         }
         
-        console.log(`Found ${results.length} unread emails`);
-        processEmailResults(imap, results, resolve, reject);
+        // Filter out already processed emails
+        const newEmails = results.filter(id => !processedEmails.has(id.toString()));
+        
+        if (newEmails.length === 0) {
+          console.log('No new emails to process');
+          resolve({ processed: 0 });
+          return;
+        }
+        
+        console.log(`Found ${newEmails.length} new emails to process`);
+        processEmailResults(imap, newEmails, resolve, reject);
       });
     });
   });
@@ -169,6 +194,11 @@ const processEmailResults = (imap, results, resolve, reject) => {
     msg.on('body', async (stream) => {
       try {
         const parsed = await simpleParser(stream);
+        
+        // Add email ID to processed set
+        const emailId = msg.seqno.toString();
+        processedEmails.add(emailId);
+        
         const from = parsed.from.text;
         const subject = parsed.subject;
         const date = parsed.date;
@@ -253,8 +283,9 @@ const processEmailResults = (imap, results, resolve, reject) => {
     reject(err);
   });
   
-  fetch.once('end', () => {
+  fetch.once('end', async () => {
     console.log('Done fetching emails');
+    await saveProcessedEmails(); // Save processed email IDs
     imap.end();
     resolve({ 
       success: true, 
@@ -392,6 +423,9 @@ const checkEmails = async () => {
     throw error;
   }
 };
+
+// Initialize by loading processed emails
+loadProcessedEmails();
 
 module.exports = {
   startEmailChecker,

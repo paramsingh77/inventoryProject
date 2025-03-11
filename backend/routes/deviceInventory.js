@@ -1,15 +1,86 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { importDeviceData, getDevices } = require('../controllers/deviceInventory');
 const { pool } = require('../database/schema');
+const path = require('path');
+const fs = require('fs');
+
+// Configure multer for file upload
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const uploadDir = path.join(__dirname, '../files/uploads');
+        // Create directory if it doesn't exist
+        require('fs').mkdirSync(uploadDir, { recursive: true });
+        cb(null, uploadDir);
+    },
+    filename: function (req, file, cb) {
+        cb(null, 'device_import_' + Date.now() + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({ storage: storage });
 
 // Route to import CSV data
-router.post('/import', async (req, res) => {
+router.post('/import', upload.single('file'), async (req, res) => {
     try {
-        const result = await importDeviceData();
+        console.log('Starting device import process...');
+        
+        if (!req.file) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'No file uploaded' 
+            });
+        }
+
+        console.log('File received:', req.file.originalname);
+        
+        const result = await importDeviceData(req.file);
+        console.log('Import result:', result);
+        
         res.json(result);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Error in device import:', error);
+        res.status(500).json({ 
+            success: false,
+            error: error.message || 'Failed to import device data'
+        });
+    }
+});
+
+// Route to import CSV data from an existing file on the server
+router.post('/import-server-file', async (req, res) => {
+    try {
+        console.log('Starting server file import process...');
+        
+        // Default to the aam.csv file if no path is provided
+        const filePath = req.query.path || path.join(__dirname, '../files/aam.csv');
+        
+        if (!fs.existsSync(filePath)) {
+            return res.status(400).json({ 
+                success: false, 
+                error: `File not found: ${filePath}` 
+            });
+        }
+
+        console.log('Using file:', filePath);
+        
+        // Create a file object similar to what multer would provide
+        const file = {
+            path: filePath,
+            originalname: path.basename(filePath)
+        };
+        
+        const result = await importDeviceData(file);
+        console.log('Import result:', result);
+        
+        res.json(result);
+    } catch (error) {
+        console.error('Error in server file import:', error);
+        res.status(500).json({ 
+            success: false,
+            error: error.message || 'Failed to import device data'
+        });
     }
 });
 

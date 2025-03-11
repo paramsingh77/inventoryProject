@@ -6,9 +6,7 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 // Database configuration
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false
-    }
+    ssl: false // Disable SSL since we're using Railway's proxy
 });
 
 // Test the connection
@@ -59,6 +57,7 @@ async function initializeSchema() {
                 device_cpu VARCHAR(200),
                 mac_addresses TEXT[],
                 status VARCHAR(50) DEFAULT 'active',
+                vendor VARCHAR(100),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_check_in TIMESTAMP,
@@ -462,8 +461,9 @@ async function storeCsvDataToInventory(csvData) {
                 device_cpu,
                 mac_addresses,
                 status,
+                vendor,
                 last_check_in
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             ON CONFLICT (serial_number) 
             DO UPDATE SET
                 site_name = EXCLUDED.site_name,
@@ -477,6 +477,7 @@ async function storeCsvDataToInventory(csvData) {
                 device_cpu = EXCLUDED.device_cpu,
                 mac_addresses = EXCLUDED.mac_addresses,
                 status = EXCLUDED.status,
+                vendor = EXCLUDED.vendor,
                 last_check_in = EXCLUDED.last_check_in,
                 updated_at = CURRENT_TIMESTAMP
             RETURNING id;
@@ -531,7 +532,8 @@ async function storeCsvDataToInventory(csvData) {
                 row.serial_number || null,
                 row.device_cpu || null,
                 macAddresses,
-                'active',  // Default status
+                'active',
+                row.vendor || null,
                 lastCheckIn
             ];
 
