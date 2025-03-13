@@ -200,16 +200,15 @@ async function initializeSchema() {
         await client.query(`
             CREATE TABLE suppliers (
                 id SERIAL PRIMARY KEY,
-                name VARCHAR(200) NOT NULL,
-                contact_person VARCHAR(100),
-                email VARCHAR(100),
+                name VARCHAR(255) NOT NULL,
+                contact_person VARCHAR(255),
+                email VARCHAR(255),
                 phone VARCHAR(50),
                 address TEXT,
-                website VARCHAR(200),
-                tax_id VARCHAR(50),
-                payment_terms TEXT,
-                performance_rating DECIMAL(3,2),
-                status VARCHAR(50),
+                website VARCHAR(255),
+                tax_id VARCHAR(100),
+                payment_terms VARCHAR(255),
+                status VARCHAR(50) DEFAULT 'active',
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

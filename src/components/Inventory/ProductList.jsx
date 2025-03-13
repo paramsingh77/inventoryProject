@@ -1457,6 +1457,58 @@ const ProductList = () => {
     return ['all', ...Array.from(types).sort()];
   }, [devices]);
 
+  // Add this code after the fetchDevicesWithImport function or in a similar location
+  
+  // Function to fetch all unique vendors/manufacturers from all devices
+  const fetchAllVendors = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch('http://localhost:2000/api/devices/vendors', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch vendors');
+      }
+
+      const data = await response.json();
+      console.log("Fetched vendors:", data);
+      return data;
+    } catch (error) {
+      console.error('Error fetching vendors:', error);
+      return [];
+    }
+  };
+  
+  // Function to fetch all devices from a specific vendor
+  const fetchDevicesByVendor = async (vendorName) => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(`http://localhost:2000/api/devices/vendor/${encodeURIComponent(vendorName)}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch devices for vendor ${vendorName}`);
+      }
+
+      const data = await response.json();
+      console.log(`Fetched ${data.length} devices for vendor ${vendorName}`);
+      return data;
+    } catch (error) {
+      console.error(`Error fetching devices for vendor ${vendorName}:`, error);
+      return [];
+    }
+  };
+
   if (loading) {
     return (
       <div className={`w-100 h-100 overflow-hidden ${darkMode ? 'dark-mode bg-dark' : 'bg-light'}`}>

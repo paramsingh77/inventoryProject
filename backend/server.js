@@ -8,6 +8,7 @@ const { Server } = require('socket.io');
 const deviceInventoryRoutes = require('./routes/deviceInventory');
 const csvRoutes = require('./routes/csv.routes');
 const invoiceRoutes = require('./routes/invoice.routes');
+const socketInit = require('./socket');
 const path = require('path');
 require('dotenv').config();
 
@@ -20,6 +21,9 @@ const io = new Server(httpServer, {
     credentials: true
   }
 });
+
+// Initialize socket.io
+socketInit.init(io);
 
 // Export io for use in other modules
 module.exports.io = io;
@@ -39,13 +43,12 @@ app.use('/api/auth', authLimiter);
 
 // CORS configuration
 const corsOptions = {
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'], // Allow from both localhost and 127.0.0.1
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  origin: true, // Allow all origins in development
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  credentials: true,
+  credentials: false,
   preflightContinue: false,
-  optionsSuccessStatus: 204,
-  maxAge: 3600
+  optionsSuccessStatus: 204
 };
 
 // Apply CORS first, before other middleware
@@ -67,6 +70,8 @@ app.use('/api/sites', require('./routes/sites.routes'));
 app.use('/api/devices', deviceInventoryRoutes);
 app.use('/api/csv', csvRoutes);
 app.use('/api', invoiceRoutes);
+app.use('/api', require('./routes/purchase-order.routes'));
+app.use('/api', require('./routes/supplier.routes'));
 
 // Import and use mock email routes for development testing
 const mockEmailRoutes = require('./routes/mock-email.routes');
@@ -108,6 +113,16 @@ app.use((req, res) => {
     success: false,
     message: 'Route not found'
   });
+});
+
+// Add a health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Server is running' });
+});
+
+// Add email check endpoint
+app.head('/api/email/check', (req, res) => {
+  res.sendStatus(200);
 });
 
 // Initialize database and start server

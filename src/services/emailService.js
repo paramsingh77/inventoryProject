@@ -3,13 +3,9 @@ import axios from 'axios';
 // Try multiple possible backend URLs
 // The backend might be running on a different port
 const POSSIBLE_BACKEND_URLS = [
-  'http://localhost:2000/api',  // Primary backend server (port 2000)
-  '/api',                       // Same origin (when using proxy in package.json)
-  'http://localhost:5000/api',  // Common Node.js port
-  'http://localhost:3001/api',  // Another common port
-  'http://127.0.0.1:2000/api',  // Using IP with port 2000
-  'http://127.0.0.1:5000/api',  // Using IP instead of localhost
-  'http://127.0.0.1:3001/api'   // Using IP with alternate port
+  'http://localhost:2000/api',  // Primary backend server
+  '/api',                       // Same origin (when using proxy)
+  'http://127.0.0.1:2000/api'  // Alternative localhost
 ];
 
 // Function to test which backend URL works
@@ -17,17 +13,21 @@ const testBackendConnection = async () => {
   for (const url of POSSIBLE_BACKEND_URLS) {
     try {
       console.log(`Testing backend connection to: ${url}`);
-      // Simple HEAD request to check connectivity
-      await axios.head(`${url}/email/check`, { timeout: 2000 });
+      // Try health check first, fallback to email check
+      try {
+        await axios.get(`${url}/health`, { timeout: 2000 });
+      } catch {
+        await axios.head(`${url}/email/check`, { timeout: 2000 });
+      }
       console.log(`✅ Successfully connected to backend at: ${url}`);
       return url;
     } catch (error) {
-      console.log(`❌ Failed to connect to: ${url}`);
+      console.log(`❌ Failed to connect to: ${url}`, error.message);
     }
   }
-  // Default to the first URL if none work
-  console.warn('Could not connect to any backend URL, using default');
-  return POSSIBLE_BACKEND_URLS[0];
+  // Default to the proxy URL if none work
+  console.warn('Could not connect to any backend URL, using proxy');
+  return '/api';
 };
 
 // Start with the first URL and try to find a working one

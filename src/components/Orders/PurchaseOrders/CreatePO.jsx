@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   Form,
@@ -35,6 +35,7 @@ import {
   sendPurchaseOrderWithPdf,
   testFileUpload
 } from '../../../services/emailService';
+import axios from 'axios';  // Import axios for API calls
 
 // Helper Functions - Move outside component
 const generatePONumber = () => {
@@ -198,6 +199,393 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
   const [sendingEmail, setSendingEmail] = useState(false);
   const [generatedPdfBlob, setGeneratedPdfBlob] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [vendorProducts, setVendorProducts] = useState([]); // Store vendor-specific products
+  const [allSuppliers, setAllSuppliers] = useState(suppliers); // Initialize with sample data
+  const [siteVendors, setSiteVendors] = useState([]); // Vendors whose products are used at the site
+  const [siteDevices, setSiteDevices] = useState([]); // Devices at the current site
+
+  // Fetch site information and devices to determine available vendors
+  useEffect(() => {
+    const fetchSiteData = async () => {
+      try {
+        // Get the current site from localStorage
+        const lastSelectedSite = localStorage.getItem('lastSelectedSite');
+        if (!lastSelectedSite) return;
+        
+        let siteName;
+        try {
+          const siteData = JSON.parse(lastSelectedSite);
+          siteName = siteData.siteName;
+        } catch (e) {
+          console.error("Error parsing stored site data:", e);
+          return;
+        }
+        
+        if (!siteName) return;
+        
+        // Fetch devices at this site
+        try {
+          const response = await axios.get(`/api/devices/site/${siteName}`);
+          if (response.data && Array.isArray(response.data)) {
+            setSiteDevices(response.data);
+            
+            // Extract unique vendors/manufacturers from the devices
+            const vendorSet = new Set();
+            response.data.forEach(device => {
+              if (device.manufacturer) vendorSet.add(device.manufacturer);
+              if (device.vendor) vendorSet.add(device.vendor);
+            });
+            
+            const uniqueVendors = Array.from(vendorSet);
+            console.log('Unique vendors at this site:', uniqueVendors);
+            
+            // Match these vendor names against our supplier list
+            // or create placeholder suppliers for them
+            const matchedSuppliers = [];
+            
+            // First try to match with existing suppliers
+            uniqueVendors.forEach(vendorName => {
+              const matchedSupplier = allSuppliers.find(
+                supplier => supplier.name?.toLowerCase() === vendorName?.toLowerCase() ||
+                           supplier.companyName?.toLowerCase() === vendorName?.toLowerCase()
+              );
+              
+              if (matchedSupplier) {
+                matchedSuppliers.push(matchedSupplier);
+              } else {
+                // Create a placeholder supplier for this vendor
+                matchedSuppliers.push({
+                  id: `auto-${vendorName.replace(/\s+/g, '-').toLowerCase()}`,
+                  name: vendorName,
+                  companyName: vendorName,
+                  email: '',
+                  contactPerson: '',
+                  phone: ''
+                });
+              }
+            });
+            
+            setSiteVendors(matchedSuppliers);
+          }
+        } catch (error) {
+          console.error('Error fetching site devices:', error);
+        }
+      } catch (error) {
+        console.error('Error in fetchSiteData:', error);
+      }
+    };
+    
+    fetchSiteData();
+    
+    // Also fetch the full supplier list as a backup
+    const fetchSuppliers = async () => {
+      try {
+        const response = await axios.get('/api/suppliers');
+        if (response.data && Array.isArray(response.data)) {
+          setAllSuppliers(response.data);
+        }
+      } catch (error) {
+        console.warn('Error fetching suppliers, using sample data:', error);
+        // Keep using the sample data if API fails
+      }
+    };
+    
+    fetchSuppliers();
+  }, []);
+
+  // Get products for the selected vendor and current site
+  const getVendorProducts = (vendorId) => {
+    if (!vendorId || !siteDevices.length) {
+      setVendorProducts([]);
+      return;
+    }
+
+    try {
+      // Find the selected vendor object
+      const selectedVendor = [...siteVendors, ...allSuppliers].find(s => 
+        s.id === vendorId || s.id === parseInt(vendorId)
+      );
+      
+      if (!selectedVendor) {
+        setVendorProducts([]);
+        return;
+      }
+
+      // Get vendor name variations
+      const vendorNames = [
+        selectedVendor.name,
+        selectedVendor.companyName
+      ].filter(Boolean).map(name => name.toLowerCase());
+      
+      // Filter site devices by this vendor
+      const vendorDevices = siteDevices.filter(device => {
+        const deviceVendor = (device.manufacturer || device.vendor || '').toLowerCase();
+        return vendorNames.some(name => deviceVendor.includes(name) || name.includes(deviceVendor));
+      });
+      
+      console.log(`Found ${vendorDevices.length} devices from ${selectedVendor.name || selectedVendor.companyName}`);
+      
+      // Convert devices to product format
+      const vendorProducts = vendorDevices.map(device => ({
+        id: device.id || Math.random().toString(36).substring(2),
+        name: device.device_hostname || device.device_model || 'Unknown Device',
+        sku: device.mac_address || device.asset_tag || 'N/A',
+        category: device.device_type || 'Other',
+        price: device.estimated_value || calculatePriceByCategory(device.device_type),
+        description: device.device_description || '',
+        quantity: 1
+      }));
+      
+      setVendorProducts(vendorProducts);
+    } catch (error) {
+      console.error('Error filtering vendor products:', error);
+      setVendorProducts([]);
+    }
+  };
+
+  // Calculate price based on device category
+  const calculatePriceByCategory = (category) => {
+    const categoryPrices = {
+      'laptop': 1200,
+      'desktop': 800,
+      'monitor': 300,
+      'printer': 400,
+      'server': 3000,
+      'network': 500,
+      'tablet': 600,
+      'phone': 800,
+      'peripheral': 100
+    };
+    
+    return categoryPrices[category?.toLowerCase()] || 500; // Default price
+  };
+
+  // Move the handleVendorChange function up before it's used in the steps array
+  // Update vendor selection handler
+  const handleVendorChange = (e) => {
+    const vendorId = e.target.value;
+    
+    // Find the selected vendor from either siteVendors or allSuppliers
+    const selectedVendor = [...siteVendors, ...allSuppliers].find(
+      vendor => vendor.id === vendorId || vendor.id === parseInt(vendorId)
+    );
+    
+    if (selectedVendor) {
+      setFormData(prev => ({
+        ...prev,
+        vendor: {
+          id: selectedVendor.id,
+          name: selectedVendor.companyName || selectedVendor.name,
+          email: selectedVendor.email || '',
+          contactPerson: selectedVendor.contactPerson || '',
+          phone: selectedVendor.phone || '',
+          address: selectedVendor.address || {
+            street: selectedVendor.street || '',
+            city: selectedVendor.city || '',
+            state: selectedVendor.state || '',
+            zip: selectedVendor.zip || '',
+            country: selectedVendor.country || ''
+          }
+        }
+      }));
+      
+      // Get products for this vendor
+      getVendorProducts(vendorId);
+    }
+  };
+
+  // Add the calculateTotal function
+  const calculateTotal = () => {
+    // Calculate subtotal from items
+    const subtotal = formData.items.reduce((acc, item) => {
+      return acc + (item.price * item.quantity);
+    }, 0);
+    
+    // Calculate tax and total
+    const tax = formData.tax || 0;
+    const shippingFees = formData.shippingFees || 0;
+    const totalAmount = subtotal + tax + shippingFees;
+    
+    // Update form data with calculated values
+    setFormData({
+      ...formData,
+      subtotal,
+      totalAmount
+    });
+    
+    return totalAmount;
+  };
+
+  // Add validation function before it's used
+  const validatePurchaseOrder = () => {
+    console.log("Validating purchase order with data:", {
+      vendorId: formData.vendor.id,
+      vendorName: formData.vendor.name,
+      supplierField: formData.supplier,
+      itemsCount: formData.items.length
+    });
+    
+    // Validate vendor information
+    if (!formData.supplier) {
+      console.error("No supplier selected");
+      addNotification('warning', 'Please select a supplier from the dropdown');
+      return false;
+    }
+    
+    if (!formData.vendor.name) {
+      console.error("Vendor name missing despite supplier selection", formData.supplier);
+      addNotification('warning', 'Vendor name is missing. Please reselect a supplier.');
+      return false;
+    }
+    
+    if (!formData.vendorEmail) {
+      addNotification('warning', 'Please enter vendor email address');
+      return false;
+    }
+    
+    if (!formData.vendorPhone) {
+      addNotification('warning', 'Please enter vendor phone number');
+      return false;
+    }
+    
+    // Validate items
+    if (formData.items.length === 0) {
+      addNotification('warning', 'Please add at least one item to the order');
+      return false;
+    }
+    
+    // All validations passed
+    console.log("Validation passed");
+    return true;
+  };
+
+  // Move handler functions up before they're used in stepComponents
+  const handleSaveDraft = async () => {
+    try {
+      setSubmitting(true);
+      
+      // Calculate totals before saving
+      calculateTotal();
+      
+      // In a real app, you would save to the backend here
+      const draftData = {
+        ...formData,
+        status: 'draft',
+        lastUpdated: new Date().toISOString()
+      };
+      
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Show success notification
+      addNotification('success', 'Purchase Order saved as draft');
+      
+      // Close modal if needed
+      // onHide();
+      
+      // In a real app, you might redirect to drafts list
+      // or stay on the same screen with updated state
+    } catch (error) {
+      console.error('Error saving draft PO:', error);
+      addNotification('error', 'Failed to save draft');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSendForApproval = async () => {
+    try {
+      setSubmitting(true);
+      console.log("Sending PO for approval with form data:", {
+        supplier: formData.supplier,
+        vendorName: formData.vendor.name,
+        vendorEmail: formData.vendorEmail,
+        vendorPhone: formData.vendorPhone,
+        itemsCount: formData.items.length
+      });
+      
+      // Run validations
+      if (!validatePurchaseOrder()) {
+        setSubmitting(false);
+        return;
+      }
+      
+      // Calculate totals before submission
+      calculateTotal();
+      
+      // Get user information from localStorage
+      const username = localStorage.getItem('username') || 'Unknown';
+      const userRole = localStorage.getItem('userRole') || 'User';
+      const department = formData.department || 'Not specified';
+      
+      // Prepare approval request payload with status explicitly set to 'pending'
+      const approvalRequest = {
+        poId: formData.id || Date.now(),
+        poNumber: formData.poNumber,
+        vendorName: formData.vendor.name,
+        vendorEmail: formData.vendorEmail,
+        contactPerson: formData.vendorEmail ? formData.vendorEmail.split('@')[0] : 'Contact',
+        phoneNumber: formData.vendorPhone,
+        department,
+        requestedBy: username,
+        requestDate: new Date().toISOString(),
+        total: parseFloat(formData.totalAmount),
+        items: formData.items,
+        notes: formData.notes || '',
+        userRole,
+        status: 'pending' // Explicitly set status to pending
+      };
+      
+      // Save the PO to the database via API
+      try {
+        // Make the API call to save the PO
+        const response = await axios.post('/api/purchase-orders', {
+          ...approvalRequest,
+          order_number: approvalRequest.poNumber,
+          vendor_name: approvalRequest.vendorName,
+          vendor_email: approvalRequest.vendorEmail,
+          contact_person: approvalRequest.contactPerson,
+          phone_number: approvalRequest.phoneNumber,
+          total_amount: approvalRequest.total,
+          status: 'pending',
+          username: username
+        });
+        
+        console.log('Purchase order created:', response.data);
+        
+        // Update the approvalRequest with the DB-generated ID if available
+        if (response.data.purchaseOrder && response.data.purchaseOrder.id) {
+          approvalRequest.poId = response.data.purchaseOrder.id;
+        }
+      } catch (apiError) {
+        console.error('Error saving purchase order:', apiError);
+        addNotification('error', `Failed to save purchase order: ${apiError.message}`);
+        setSubmitting(false);
+        return;
+      }
+      
+      console.log('Sending approval request:', approvalRequest);
+      
+      // Emit socket event for approval notification
+      if (window.socket) {
+        window.socket.emit('po_approval_requested', approvalRequest);
+      }
+      
+      // Show success notification
+      addNotification('success', 'Purchase Order sent for approval');
+      
+      // Close modal and refresh orders list
+      onHide();
+      if (onSuccess) {
+        onSuccess(approvalRequest);
+      }
+    } catch (error) {
+      console.error('Error sending PO for approval:', error);
+      addNotification('error', 'Failed to send for approval');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // Item Management Functions
   const calculateTotals = (items) => {
@@ -250,341 +638,180 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
     calculateTotals(updatedItems);
   };
 
-  const steps = [
+  // Listen for changes to supplier from BasicInfo
+  useEffect(() => {
+    if (formData.supplier) {
+      // Get vendor ID from the supplier field
+      const vendorId = formData.supplier;
+      
+      // If this is a vendor ID from our dropdown (with vendor- prefix)
+      if (vendorId.startsWith('vendor-')) {
+        const vendorName = vendorId.replace('vendor-', '').replace(/-/g, ' ');
+        console.log(`Selected vendor name: ${vendorName}`);
+        
+        // Update the vendor details with the extracted vendor name
+        setFormData(prev => ({
+          ...prev,
+          vendor: {
+            ...prev.vendor,
+            id: vendorId, // Set the vendor ID from the selection
+            name: vendorName.charAt(0).toUpperCase() + vendorName.slice(1) // Capitalize first letter
+          }
+        }));
+        
+        // Get products for this vendor
+        const fetchVendorProducts = async () => {
+          try {
+            setVendorProducts([]);
+            const encodedVendorName = encodeURIComponent(vendorName);
+            console.log(`Fetching products for vendor: ${encodedVendorName}`);
+            
+            const response = await axios.get(`/api/devices/vendor/${encodedVendorName}`);
+            
+            if (response.data && Array.isArray(response.data)) {
+              console.log(`Found ${response.data.length} products for vendor ${vendorName}`);
+              
+              // Format the products for our component
+              const formattedProducts = response.data.map(device => ({
+                id: device.id || Math.random().toString(36).substring(2),
+                name: device.device_hostname || device.device_model || 'Unknown Device',
+                sku: device.mac_address || device.asset_tag || 'N/A',
+                category: device.device_type || 'Other',
+                price: device.estimated_value || calculatePriceByCategory(device.device_type),
+                description: device.device_description || '',
+                vendor: device.manufacturer || vendorName
+              }));
+              
+              setVendorProducts(formattedProducts);
+            } else {
+              console.warn(`No products found for vendor ${vendorName}`);
+            }
+          } catch (error) {
+            console.error(`Error fetching products for vendor ${vendorName}:`, error);
+          }
+        };
+        
+        fetchVendorProducts();
+      }
+    }
+  }, [formData.supplier]);
+  
+  // Listen for changes to vendor details from BasicInfo
+  useEffect(() => {
+    if (formData.vendorAddress || formData.vendorEmail || formData.vendorPhone) {
+      // Update the vendor object with the new details
+      setFormData(prev => {
+        // Only update if we have a vendor name already (meaning a supplier was selected)
+        if (!prev.vendor.name) return prev;
+        
+        return {
+          ...prev,
+          vendor: {
+            ...prev.vendor, // Keep existing vendor properties like id and name
+            address: {
+              ...prev.vendor.address,
+              street: formData.vendorAddress || prev.vendor.address.street,
+            },
+            email: formData.vendorEmail || prev.vendor.email,
+            phone: formData.vendorPhone || prev.vendor.phone,
+            contactPerson: formData.vendorEmail ? formData.vendorEmail.split('@')[0] : prev.vendor.contactPerson
+          }
+        };
+      });
+    }
+  }, [formData.vendorAddress, formData.vendorEmail, formData.vendorPhone]);
+  
+  // Validate purchase order data before submission
+
+  // In the CreatePO component, find the stepComponents array/object and update it
+  const stepComponents = [
     {
       title: 'Basic Information',
-      fields: [
-        {
-          section: 'Purchase Order Details',
-          components: (
-            <Row className="g-3">
-              <Col md={6}>
-                <Form.Group>
-                  <Form.Label style={styles.formLabel}>PO Number</Form.Label>
-                  <Form.Control
-                    type="text"
-                    value={formData.poNumber}
-                    disabled
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group>
-                  <Form.Label style={styles.formLabel}>Order Date</Form.Label>
-                  <Form.Control
-                    type="date"
-                    value={formData.poDate}
-                    disabled
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group>
-                  <RequiredLabel>Delivery Date</RequiredLabel>
-                  <Form.Control
-                    type="date"
-                    value={formData.deliveryDate}
-                    onChange={(e) => updateFormData('deliveryDate', e.target.value)}
-                    required
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group>
-                  <RequiredLabel>Payment Terms</RequiredLabel>
-                  <Form.Select
-                    value={formData.paymentTerms}
-                    onChange={(e) => updateFormData('paymentTerms', e.target.value)}
-                    required
-                  >
-                    <option value="">Select Terms</option>
-                    <option value="net30">Net 30</option>
-                    <option value="net60">Net 60</option>
-                    <option value="immediate">Immediate</option>
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-            </Row>
-          )
-        },
-        {
-          section: 'Vendor Details',
-          components: (
-            <Row className="g-3">
-              <Col md={12}>
-                <Form.Group>
-                  <RequiredLabel>Vendor</RequiredLabel>
-                  <Form.Select
-                    value={formData.vendor.id}
-                    onChange={(e) => {
-                      const selectedVendor = suppliers.find(s => s.id === parseInt(e.target.value));
-                      if (selectedVendor) {
-                        setFormData(prev => ({
-                          ...prev,
-                          vendor: {
-                            id: selectedVendor.id,
-                            name: selectedVendor.name,
-                            email: selectedVendor.email,
-                            contactPerson: '',
-                            phone: '',
-                            address: selectedVendor.address || {
-                              street: '',
-                              city: '',
-                              state: '',
-                              zip: '',
-                              country: ''
-                            }
-                          }
-                        }));
-                      }
-                    }}
-                    required
-                  >
-                    <option value="">Select Vendor</option>
-                    {suppliers.map(supplier => (
-                      <option key={supplier.id} value={supplier.id}>
-                        {supplier.name}
-                      </option>
-                    ))}
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group>
-                  <RequiredLabel>Contact Person</RequiredLabel>
-                  <Form.Control
-                    type="text"
-                    value={formData.vendor.contactPerson || ''}
-                    onChange={(e) => updateVendorDetails('contactPerson', e.target.value)}
-                    placeholder="Enter contact person name"
-                    required
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group>
-                  <RequiredLabel>Email</RequiredLabel>
-                  <Form.Control
-                    type="email"
-                    value={formData.vendor.email || ''}
-                    onChange={(e) => updateVendorDetails('email', e.target.value)}
-                    placeholder="Enter vendor email"
-                    required
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group>
-                  <RequiredLabel>Phone</RequiredLabel>
-                  <Form.Control
-                    type="tel"
-                    value={formData.vendor.phone || ''}
-                    onChange={(e) => updateVendorDetails('phone', e.target.value)}
-                    placeholder="Enter vendor phone"
-                    required
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={12}>
-                <Form.Group>
-                  <RequiredLabel>Address</RequiredLabel>
-                  <Form.Control
-                    as="textarea"
-                    rows={2}
-                    value={formData.vendor.address.street || ''}
-                    onChange={(e) => {
-                      setFormData(prev => ({
-                        ...prev,
-                        vendor: {
-                          ...prev.vendor,
-                          address: {
-                            ...prev.vendor.address,
-                            street: e.target.value
-                          }
-                        }
-                      }));
-                    }}
-                    placeholder="Enter vendor address"
-                    required
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
-          )
-        }
-      ]
+      component: (
+        <>
+          <div className="mb-4">
+            <h6 style={styles.sectionTitle}>Purchase Order Details</h6>
+            <div className="bg-light rounded-3 p-4">
+              <Row className="g-3">
+                <Col md={6}>
+                  <Form.Group>
+                    <Form.Label style={styles.formLabel}>PO Number</Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={formData.poNumber}
+                      disabled
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={6}>
+                  <Form.Group>
+                    <Form.Label style={styles.formLabel}>Order Date</Form.Label>
+                    <Form.Control
+                      type="date"
+                      value={formData.poDate}
+                      disabled
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={6}>
+                  <Form.Group>
+                    <RequiredLabel>Delivery Date</RequiredLabel>
+                    <Form.Control
+                      type="date"
+                      value={formData.deliveryDate}
+                      onChange={(e) => setFormData(prev => ({ ...prev, deliveryDate: e.target.value }))}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={6}>
+                  <Form.Group>
+                    <RequiredLabel>Payment Terms</RequiredLabel>
+                    <Form.Select
+                      value={formData.paymentTerms}
+                      onChange={(e) => setFormData(prev => ({ ...prev, paymentTerms: e.target.value }))}
+                      required
+                    >
+                      <option value="">Select Terms</option>
+                      <option value="net30">Net 30</option>
+                      <option value="net60">Net 60</option>
+                      <option value="immediate">Immediate</option>
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+              </Row>
+            </div>
+          </div>
+          <div className="mb-4">
+            <h6 style={styles.sectionTitle}>Vendor Details</h6>
+            <div className="bg-light rounded-3 p-4">
+              <BasicInfo formData={formData} setFormData={setFormData} />
+            </div>
+          </div>
+        </>
+      )
     },
     {
-      title: 'Items',
-      fields: [
-        {
-          section: 'Order Items',
-          components: (
-            <div>
-              {/* Product Selector */}
-              <div className="mb-4 bg-white p-3 rounded-3 border">
-                <Form.Group>
-                  <Form.Label style={styles.formLabel}>Add Product</Form.Label>
-                  <InputGroup>
-                    <Form.Select
-                      onChange={(e) => {
-                        const product = products.find(p => p.id === e.target.value);
-                        if (product) {
-                          const newItem = {
-                            id: product.id,
-                            name: product.name,
-                            description: product.description,
-                            quantity: 1,
-                            unitPrice: product.price,
-                            totalPrice: product.price,
-                            sku: product.sku
-                          };
-                          const updatedItems = [...formData.items, newItem];
-                          setFormData(prev => ({ ...prev, items: updatedItems }));
-                          calculateTotals(updatedItems);
-                        }
-                      }}
-                      value=""
-                    >
-                      <option value="">Select a product...</option>
-                      {products.map(product => (
-                        <option key={product.id} value={product.id}>
-                          {product.name} - ${product.price} (SKU: {product.sku})
-                        </option>
-                      ))}
-                    </Form.Select>
-                    <Button 
-                      variant="outline-secondary"
-                      onClick={() => {
-                        // Open product catalog modal if needed
-                      }}
-                    >
-                      <FontAwesomeIcon icon={faSearch} className="me-2" />
-                      Browse Catalog
-                    </Button>
-                  </InputGroup>
-                </Form.Group>
-              </div>
-
-              {/* Items Table */}
-              <Table responsive className="mb-3">
-                <thead>
-                  <tr>
-                    <th>SKU</th>
-                    <th>Item</th>
-                    <th>Description</th>
-                    <th>Quantity</th>
-                    <th>Unit Price ($)</th>
-                    <th>Total ($)</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {formData.items.map((item, index) => (
-                    <tr key={index}>
-                      <td>{item.sku}</td>
-                      <td>{item.name}</td>
-                      <td>{item.description}</td>
-                      <td style={{ width: '120px' }}>
-                        <Form.Control
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 0)}
-                        />
-                      </td>
-                      <td>${item.unitPrice.toFixed(2)}</td>
-                      <td>${(item.quantity * item.unitPrice).toFixed(2)}</td>
-                      <td>
-                        <Button
-                          variant="light"
-                          size="sm"
-                          className="text-danger"
-                          onClick={() => removeItem(index)}
-                        >
-                          <FontAwesomeIcon icon={faTrash} />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan="5" className="text-end">Subtotal:</td>
-                    <td>${formData.subtotal.toFixed(2)}</td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td colSpan="5" className="text-end">Tax (10%):</td>
-                    <td>${formData.tax.toFixed(2)}</td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td colSpan="5" className="text-end">Shipping:</td>
-                    <td>${formData.shippingFees.toFixed(2)}</td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td colSpan="5" className="text-end fw-bold">Total:</td>
-                    <td className="fw-bold">${formData.totalAmount.toFixed(2)}</td>
-                    <td></td>
-                  </tr>
-                </tfoot>
-              </Table>
-            </div>
-          )
-        }
-      ]
+      title: 'Item Selection',
+      component: (
+        <ItemsSelection 
+          formData={formData} 
+          setFormData={setFormData} 
+          vendorProducts={vendorProducts} 
+        />
+      )
     },
     {
       title: 'Additional Details',
-      fields: [
-        {
-          section: 'Additional Information',
-          components: (
-            <Row className="g-3">
-              <Col md={12}>
-                <Form.Group>
-                  <Form.Label style={styles.formLabel}>Justification</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={3}
-                    value={formData.justification}
-                    onChange={(e) => updateFormData('justification', e.target.value)}
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={12}>
-                <Form.Group>
-                  <Form.Label style={styles.formLabel}>Special Instructions</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={2}
-                    value={formData.specialInstructions}
-                    onChange={(e) => updateFormData('specialInstructions', e.target.value)}
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Check
-                  type="checkbox"
-                  label="Warranty Required"
-                  checked={formData.warrantyRequired}
-                  onChange={(e) => updateFormData('warrantyRequired', e.target.checked)}
-                />
-              </Col>
-              <Col md={6}>
-                <Form.Check
-                  type="checkbox"
-                  label="Return Policy Accepted"
-                  checked={formData.returnPolicyAccepted}
-                  onChange={(e) => updateFormData('returnPolicyAccepted', e.target.checked)}
-                />
-              </Col>
-            </Row>
-          )
-        }
-      ]
+      component: (
+        <AdditionalDetails 
+          formData={formData} 
+          setFormData={setFormData}
+          onPrevious={() => setCurrentStep(2)} // Go back to items step
+          onSaveDraft={handleSaveDraft}
+          onSendForApproval={handleSendForApproval}
+        />
+      )
     }
   ];
 
@@ -605,59 +832,14 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
     }));
   };
 
-  const validateForm = () => {
-    const errors = [];
-
-    // Vendor validation
-    if (!formData.vendor.id) {
-      errors.push('Please select a vendor');
-    }
-    if (!formData.vendor.contactPerson) {
-      errors.push('Contact person is required');
-    }
-    if (!formData.vendor.email) {
-      errors.push('Vendor email is required');
-    }
-    if (!formData.vendor.phone) {
-      errors.push('Vendor phone is required');
-    }
-    if (!formData.vendor.address.street) {
-      errors.push('Vendor address is required');
-    }
-
-    // PO Details validation
-    if (!formData.deliveryDate) {
-      errors.push('Delivery date is required');
-    }
-    if (!formData.paymentTerms) {
-      errors.push('Payment terms are required');
-    }
-
-    // Items validation
-    if (formData.items.length === 0) {
-      errors.push('Please add at least one item');
-    }
-
-    // Show all validation errors
-    if (errors.length > 0) {
-      errors.forEach(error => {
-        addNotification('error', error);
-      });
-      return { isValid: false, errorMessage: errors.join('\n') };
-    }
-
-    return { isValid: true };
-  };
-
   const handleSubmit = async () => {
     console.log('🚀 handleSubmit started - Creating Purchase Order');
     
-    // Validate form
+    // Validate the form
     console.log('🔍 Validating form...');
-    const validationResult = validateForm();
-    if (!validationResult.isValid) {
-      console.error('❌ Form validation failed:', validationResult.errorMessage);
-      addNotification('error', validationResult.errorMessage);
+    const validationResult = validatePurchaseOrder();
+    if (!validationResult) {
+      console.error('❌ Form validation failed');
       return;
     }
     console.log('✅ Form validation passed');
@@ -906,7 +1088,7 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
     });
   };
 
-  // Reliable send function that doesn't depend on backend email service
+  // Reliable send function that doesn't depend on backend email API
   const handleEmergencySend = async () => {
     console.log('🚨 RELIABLE SEND started - This will bypass the backend email API');
     
@@ -994,7 +1176,7 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
         {/* Progress Steps */}
         <div style={styles.stepContainer}>
           <div style={styles.stepLine} />
-          {steps.map((step, index) => (
+          {stepComponents.map((step, index) => (
             <motion.div
               key={index}
               style={styles.step}
@@ -1016,19 +1198,14 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
           transition={{ duration: 0.3 }}
         >
           <Form>
-            {steps[currentStep - 1].fields.map((field, index) => (
-              <div key={index} className="mb-4">
-                <h6 style={styles.sectionTitle}>{field.section}</h6>
-                <div className="bg-light rounded-3 p-4">
-                  {field.components}
-                </div>
-              </div>
-            ))}
+            {currentStep === 1 && stepComponents[0].component}
+            {currentStep === 2 && stepComponents[1].component}
+            {currentStep === 3 && stepComponents[2].component}
           </Form>
         </motion.div>
       </Modal.Body>
       <Modal.Footer className="border-0">
-        {currentStep < steps.length ? (
+        {currentStep < stepComponents.length ? (
           <>
             <Button variant="outline-secondary" onClick={onHide} className="me-auto">
               <FontAwesomeIcon icon={faTimes} className="me-2" />
@@ -1067,10 +1244,9 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
               Previous
             </Button>
             <Button 
-              variant="success" 
-              onClick={handleSubmit}
+              variant="primary" 
+              onClick={handleSendForApproval}
               disabled={submitting}
-              className="me-2"
             >
               {submitting ? (
                 <>
@@ -1079,46 +1255,11 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
                 </>
               ) : (
                 <>
-                  <FontAwesomeIcon icon={faSave} className="me-2" />
-                  Create PO
+                  <FontAwesomeIcon icon={faPaperPlane} className="me-2" />
+                  Send for Approval
                 </>
               )}
             </Button>
-            {generatedPdfBlob && (
-              <>
-                <Button 
-                  variant="primary" 
-                  onClick={handleSendEmail}
-                  disabled={sendingEmail}
-                >
-                  {sendingEmail ? (
-                    <>
-                      <Spinner
-                        as="span"
-                        animation="border"
-                        size="sm"
-                        role="status"
-                        aria-hidden="true"
-                        className="me-2"
-                      />
-                      Creating PO...
-                    </>
-                  ) : (
-                    <>
-                      <FontAwesomeIcon icon={faPaperPlane} className="me-2" />
-                      Create Purchase Order
-                    </>
-                  )}
-                </Button>
-                <Button 
-                  variant="outline-secondary" 
-                  onClick={onHide}
-                >
-                  <FontAwesomeIcon icon={faTimes} className="me-2" />
-                  Cancel
-                </Button>
-              </>
-            )}
           </>
         )}
       </Modal.Footer>

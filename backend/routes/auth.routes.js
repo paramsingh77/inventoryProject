@@ -32,6 +32,30 @@ const loginValidation = [
     validateRequest
 ];
 
+// Simplified admin registration (only for development purposes)
+router.post('/register-admin', async (req, res) => {
+    try {
+        const { username, email, password, fullName } = req.body;
+        
+        if (!username || !email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: 'Username, email and password are required'
+            });
+        }
+        
+        // Register the user with admin role
+        req.body.role = 'admin';
+        return register(req, res);
+    } catch (error) {
+        console.error('Admin registration error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
+
 // Routes
 router.post('/register', registerValidation, register);
 router.post('/login', loginValidation, login);

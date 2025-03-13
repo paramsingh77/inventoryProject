@@ -51,7 +51,7 @@ const POApprovals = () => {
             <td>{po.id}</td>
             <td>{po.supplier}</td>
             <td>{po.date}</td>
-            <td>${po.total.toFixed(2)}</td>
+            <td>${parseFloat(po.total || 0).toFixed(2)}</td>
             <td>{po.requestedBy}</td>
             <td>{getPriorityBadge(po.priority)}</td>
             <td>

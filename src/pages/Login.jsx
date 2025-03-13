@@ -20,18 +20,38 @@ const Login = () => {
     setLoading(true);
 
     try {
+      console.log('Attempting login with:', username);
       const result = await login(username, password);
+      
       if (!result.success) {
         setError(result.error || 'Invalid credentials');
+        console.error('Login failed:', result.error);
       }
-      else{
+      else {
+        console.log('Login successful, redirecting...');
         navigate('/sites');
       }
     } catch (err) {
-      setError('An error occurred during login');
+      console.error('Login error:', err);
+      setError(`Login error: ${err.message || 'An unknown error occurred'}`);
     } finally {
       setLoading(false);
     }
+  };
+
+  const renderDevelopmentHelp = () => {
+    if (process.env.NODE_ENV === 'development') {
+      return (
+        <div className="mt-4 p-3 bg-light rounded">
+          <h6 className="text-muted">Development Mode Credentials:</h6>
+          <ul className="mb-0 small text-muted">
+            <li>Admin: username="admin", password="admin123"</li>
+            <li>User: username="user", password="user123"</li>
+          </ul>
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
@@ -120,6 +140,8 @@ const Login = () => {
               Forgot your password? Contact your administrator
             </small>
           </div>
+
+          {renderDevelopmentHelp()}
         </div>
       </motion.div>
     </div>

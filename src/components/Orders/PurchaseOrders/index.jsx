@@ -18,23 +18,22 @@ import POTracking from './POTracking';
 import POReceiving from './POReceiving';
 import POInvoices from './POInvoices';
 import { useNotification } from '../../../context/NotificationContext';
+import { usePurchaseOrders } from '../../../context/PurchaseOrderContext';
 
 const PurchaseOrders = () => {
   const [activeTab, setActiveTab] = useState('all');
   const [showCreatePO, setShowCreatePO] = useState(false);
   const { addNotification } = useNotification();
+  const { purchaseOrders } = usePurchaseOrders();
 
-  // PO Status counts for badges
-  const statusCounts = {
-    pending_approval: 2,
-    approved: 1,
-    completed: 1
+  // Calculate status counts for badges
+  const getStatusCount = (status) => {
+    return purchaseOrders.filter(po => po.status === status).length;
   };
 
   const handleCreatePO = (poData) => {
     addNotification('success', 'Purchase Order created successfully');
     setShowCreatePO(false);
-    // Optionally refresh the PO list
   };
 
   return (
@@ -64,6 +63,9 @@ const PurchaseOrders = () => {
                 <span>
                   <FontAwesomeIcon icon={faClipboardList} className="me-2" />
                   All POs
+                  <span className="badge bg-secondary ms-2">
+                    {purchaseOrders.length}
+                  </span>
                 </span>
               }
             >
@@ -74,16 +76,16 @@ const PurchaseOrders = () => {
               title={
                 <span>
                   <FontAwesomeIcon icon={faHourglassHalf} className="me-2" />
-                  Pending Approval
-                  {statusCounts.pending_approval > 0 && (
+                  Pending
+                  {getStatusCount('pending') > 0 && (
                     <span className="badge bg-warning ms-2">
-                      {statusCounts.pending_approval}
+                      {getStatusCount('pending')}
                     </span>
                   )}
                 </span>
               }
             >
-              <POList filter="pending_approval" />
+              <POList filter="pending" />
             </Tab>
             <Tab
               eventKey="approved"
@@ -91,9 +93,9 @@ const PurchaseOrders = () => {
                 <span>
                   <FontAwesomeIcon icon={faCheck} className="me-2" />
                   Approved
-                  {statusCounts.approved > 0 && (
+                  {getStatusCount('approved') > 0 && (
                     <span className="badge bg-success ms-2">
-                      {statusCounts.approved}
+                      {getStatusCount('approved')}
                     </span>
                   )}
                 </span>
@@ -107,9 +109,9 @@ const PurchaseOrders = () => {
                 <span>
                   <FontAwesomeIcon icon={faHistory} className="me-2" />
                   Completed
-                  {statusCounts.completed > 0 && (
+                  {getStatusCount('completed') > 0 && (
                     <span className="badge bg-primary ms-2">
-                      {statusCounts.completed}
+                      {getStatusCount('completed')}
                     </span>
                   )}
                 </span>

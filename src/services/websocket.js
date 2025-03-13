@@ -4,18 +4,45 @@ class WebSocketService {
   constructor() {
     this.socket = null;
     this.subscribers = new Map();
+    this.isConnecting = false;
+    this.connectionAttempts = 0;
+    this.maxConnectionAttempts = 3;
   }
 
   connect() {
+    // If already connecting or connected, don't try again
+    if (this.isConnecting || this.socket) {
+      return;
+    }
+    
+    this.isConnecting = true;
+    
     if (!this.socket) {
-      this.socket = io(process.env.REACT_APP_WEBSOCKET_URL || 'ws://localhost:3001');
+      this.socket = io(process.env.REACT_APP_WEBSOCKET_URL || 'ws://localhost:3001', {
+        reconnectionAttempts: this.maxConnectionAttempts,
+        reconnectionDelay: 2000,
+        timeout: 5000,
+        transports: ['websocket'], // Only use websocket for better performance
+        forceNew: false,
+        autoConnect: true
+      });
 
       this.socket.on('connect', () => {
-        console.log('WebSocket connected');
+        this.isConnecting = false;
+        this.connectionAttempts = 0;
       });
 
       this.socket.on('disconnect', () => {
-        console.log('WebSocket disconnected');
+        // Don't log - this can flood the console
+      });
+
+      this.socket.on('connect_error', () => {
+        this.connectionAttempts++;
+        if (this.connectionAttempts >= this.maxConnectionAttempts) {
+          this.isConnecting = false;
+          // Don't keep trying forever
+          this.socket.disconnect();
+        }
       });
 
       // Handle incoming messages
@@ -31,6 +58,8 @@ class WebSocketService {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
+      this.isConnecting = false;
+      this.connectionAttempts = 0;
     }
   }
 
@@ -38,7 +67,10 @@ class WebSocketService {
     if (!this.subscribers.has(type)) {
       this.subscribers.set(type, []);
     }
-    this.subscribers.get(type).push(handler);
+    // Check if handler is already subscribed to avoid duplicates
+    if (!this.subscribers.get(type).includes(handler)) {
+      this.subscribers.get(type).push(handler);
+    }
   }
 
   unsubscribe(type, handler) {
@@ -52,4 +84,5 @@ class WebSocketService {
   }
 }
 
+// Export a singleton instance
 export default new WebSocketService(); 

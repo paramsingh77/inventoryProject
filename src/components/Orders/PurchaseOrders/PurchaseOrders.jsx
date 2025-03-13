@@ -18,52 +18,122 @@ import { useNotification } from '../../../context/NotificationContext';
 import CreatePO from './CreatePO';
 import POInvoices from './POInvoices';
 import socket from '../../../utils/socket';
+import axios from 'axios';
 
 const PurchaseOrders = () => {
-  const [orders, setOrders] = useState([
-    { 
-      id: 'PO-001', 
-      poNumber: 'PO-001',
-      supplier: 'Tech Supplies Inc', 
-      vendor: { name: 'Tech Supplies Inc', email: 'info@techsupplies.com' },
-      date: '2024-01-20', 
-      createdAt: '2024-01-20',
-      total: 2500.00,
-      totalAmount: 2500.00,
-      status: 'Pending',
-      hasInvoice: false
-    },
-    { 
-      id: 'PO-002', 
-      poNumber: 'PO-002',
-      supplier: 'Office Solutions', 
-      vendor: { name: 'Office Solutions', email: 'orders@officesolutions.com' },
-      date: '2024-01-19', 
-      createdAt: '2024-01-19',
-      total: 1800.00,
-      totalAmount: 1800.00,
-      status: 'Approved',
-      hasInvoice: true
-    },
-    { 
-      id: 'PO-003', 
-      poNumber: 'PO-003',
-      supplier: 'Global Electronics', 
-      vendor: { name: 'Global Electronics', email: 'sales@globalelectronics.com' },
-      date: '2024-01-18', 
-      createdAt: '2024-01-18',
-      total: 3200.00,
-      totalAmount: 3200.00,
-      status: 'Delivered',
-      hasInvoice: true
-    }
-  ]);
-
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
 
   const { addNotification } = useNotification();
+
+  // Fetch purchase orders from API
+  const fetchPurchaseOrders = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await axios.get('/api/purchase-orders');
+      console.log('Fetched purchase orders:', response.data);
+      
+      // Format the orders to match our component structure
+      const formattedOrders = response.data.map(order => ({
+        id: order.id,
+        poNumber: order.order_number,
+        supplier: order.supplier_name || order.vendor_name || 'Unknown Vendor',
+        vendor: { 
+          name: order.supplier_name || order.vendor_name || 'Unknown Vendor',
+          email: order.supplier_email || order.vendor_email || ''
+        },
+        date: new Date(order.order_date || order.created_at).toISOString().split('T')[0],
+        createdAt: order.created_at,
+        total: parseFloat(order.total_amount || 0),
+        totalAmount: parseFloat(order.total_amount || 0),
+        status: order.status || 'Pending',
+        hasInvoice: order.has_invoice || false,
+        items: order.items || []
+      }));
+      
+      setOrders(formattedOrders);
+    } catch (err) {
+      console.error('Error fetching purchase orders:', err);
+      setError('Failed to load purchase orders');
+      addNotification('error', 'Failed to load purchase orders');
+      
+      // Keep demo data for development if API fails
+      if (orders.length === 0) {
+        setOrders([
+          { 
+            id: 'PO-001', 
+            poNumber: 'PO-001',
+            supplier: 'Tech Supplies Inc', 
+            vendor: { name: 'Tech Supplies Inc', email: 'info@techsupplies.com' },
+            date: '2024-01-20', 
+            createdAt: '2024-01-20',
+            total: 2500.00,
+            totalAmount: 2500.00,
+            status: 'pending',
+            hasInvoice: false
+          },
+          { 
+            id: 'PO-002', 
+            poNumber: 'PO-002',
+            supplier: 'Office Solutions', 
+            vendor: { name: 'Office Solutions', email: 'orders@officesolutions.com' },
+            date: '2024-01-19', 
+            createdAt: '2024-01-19',
+            total: 1800.00,
+            totalAmount: 1800.00,
+            status: 'approved',
+            hasInvoice: true
+          },
+          { 
+            id: 'PO-003', 
+            poNumber: 'PO-003',
+            supplier: 'Global Electronics', 
+            vendor: { name: 'Global Electronics', email: 'sales@globalelectronics.com' },
+            date: '2024-01-18', 
+            createdAt: '2024-01-18',
+            total: 3200.00,
+            totalAmount: 3200.00,
+            status: 'delivered',
+            hasInvoice: true
+          }
+        ]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial fetch when component mounts
+  useEffect(() => {
+    fetchPurchaseOrders();
+    
+    // Setup socket connection for real-time updates
+    socket.on('po_status_update', (data) => {
+      console.log('Socket.IO po_status_update event received:', data);
+      // Update order status when a socket notification is received
+      setOrders(prev => prev.map(order => {
+        if (order.id === data.poId || order.poNumber === data.poNumber) {
+          return {
+            ...order,
+            status: data.status
+          };
+        }
+        return order;
+      }));
+      
+      addNotification('info', `PO ${data.poNumber} status updated to ${data.status}`);
+    });
+    
+    return () => {
+      socket.off('po_status_update');
+    };
+  }, [addNotification]);
 
   useEffect(() => {
     // Listen for new POs
@@ -71,14 +141,18 @@ const PurchaseOrders = () => {
       if (event.detail?.type === 'NEW_PO') {
         const newPO = {
           ...event.detail.po,
-          id: event.detail.po.poNumber,
+          id: event.detail.po.id || event.detail.po.poId || event.detail.po.poNumber,
           supplier: event.detail.po.vendor?.name || 'Unknown Vendor',
           date: new Date().toISOString().split('T')[0],
           total: event.detail.po.totalAmount,
-          status: 'Pending',
+          status: event.detail.po.status || 'pending',
           hasInvoice: false
         };
+        
+        // Add the new PO and refresh from API to ensure synced data
         setOrders(prev => [newPO, ...prev]);
+        fetchPurchaseOrders();
+        
         addNotification('success', 'New purchase order created successfully');
       }
     };
@@ -91,7 +165,7 @@ const PurchaseOrders = () => {
           if (order.poNumber === event.detail.poReference) {
             return {
               ...order,
-              status: 'Approved', // Change status to Approved when invoice is received
+              status: 'approved', // Change status to Approved when invoice is received
               hasInvoice: true
             };
           }
@@ -117,50 +191,32 @@ const PurchaseOrders = () => {
     window.addEventListener('purchaseOrder', handleNewPO);
     window.addEventListener('invoice', handleNewInvoice);
     
-    // Socket.IO event listeners
-    socket.on('newInvoice', (data) => {
-      console.log('Socket.IO newInvoice event received:', data);
-      if (data.type === 'NEW_INVOICE' && data.poReference) {
-        // Update the PO status when an invoice is received via Socket.IO
-        setOrders(prev => prev.map(order => {
-          if (order.poNumber === data.poReference) {
-            return {
-              ...order,
-              status: 'Approved', // Change status to Approved when invoice is received
-              hasInvoice: true
-            };
-          }
-          return order;
-        }));
-        addNotification('success', `Invoice received for PO ${data.poReference}`);
-      }
-    });
-    
     return () => {
       window.removeEventListener('purchaseOrder', handleNewPO);
       window.removeEventListener('invoice', handleNewInvoice);
-      socket.off('newInvoice');
     };
   }, [addNotification]);
 
   const getStatusBadge = (status) => {
     const colors = {
-      'Pending': 'warning',
-      'Approved': 'info',
-      'Delivered': 'success',
-      'Cancelled': 'danger'
+      'pending': 'warning',
+      'approved': 'info',
+      'delivered': 'success',
+      'cancelled': 'danger',
+      'rejected': 'danger'
     };
-    return <Badge bg={colors[status]}>{status}</Badge>;
+    return <Badge bg={colors[status?.toLowerCase()] || 'secondary'}>{status?.toUpperCase()}</Badge>;
   };
 
   const getStatusIcon = (status) => {
     const icons = {
-      'Pending': faHourglassHalf,
-      'Approved': faCheckCircle,
-      'Delivered': faTruck,
-      'Cancelled': faTimes
+      'pending': faHourglassHalf,
+      'approved': faCheckCircle,
+      'delivered': faTruck,
+      'cancelled': faTimes,
+      'rejected': faTimes
     };
-    return icons[status] || faHourglassHalf;
+    return icons[status?.toLowerCase()] || faHourglassHalf;
   };
 
   const handleCreatePO = () => {
@@ -168,31 +224,28 @@ const PurchaseOrders = () => {
   };
 
   const handlePOCreated = (newPO) => {
+    // The event listener will handle adding the new PO
     setShowCreateModal(false);
-    // The PO will be added via the event listener
+    fetchPurchaseOrders(); // Refresh the list to ensure the new PO appears
   };
 
   const filteredOrders = orders.filter(order => {
     // Filter by search term
     const matchesSearch = 
-      order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.supplier.toLowerCase().includes(searchTerm.toLowerCase());
+      order.poNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.supplier?.toLowerCase().includes(searchTerm.toLowerCase());
     
     // Filter by tab
     if (activeTab === 'all') return matchesSearch;
-    return matchesSearch && order.status.toLowerCase() === activeTab.toLowerCase();
+    return matchesSearch && order.status?.toLowerCase() === activeTab.toLowerCase();
   });
 
   const getTabCount = (status) => {
     if (status === 'all') return orders.length;
-    return orders.filter(order => order.status.toLowerCase() === status.toLowerCase()).length;
+    return orders.filter(order => order.status?.toLowerCase() === status.toLowerCase()).length;
   };
 
-  // Debug: Log orders to console to verify status changes
-  useEffect(() => {
-    console.log('Current orders:', orders);
-  }, [orders]);
-
+  // Render content
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -225,6 +278,9 @@ const PurchaseOrders = () => {
         </InputGroup>
       </div>
 
+      {loading && <p className="text-center">Loading purchase orders...</p>}
+      {error && <p className="text-center text-danger">{error}</p>}
+
       <Tab.Container activeKey={activeTab} onSelect={setActiveTab}>
         <Card className="border-0 shadow-sm">
           <Card.Header className="bg-white border-0 pt-3">
@@ -250,8 +306,8 @@ const PurchaseOrders = () => {
                 </Nav.Link>
               </Nav.Item>
               <Nav.Item>
-                <Nav.Link eventKey="cancelled">
-                  Cancelled <Badge bg="danger" pill>{getTabCount('cancelled')}</Badge>
+                <Nav.Link eventKey="rejected">
+                  Rejected <Badge bg="danger" pill>{getTabCount('rejected')}</Badge>
                 </Nav.Link>
               </Nav.Item>
             </Nav>
@@ -259,56 +315,55 @@ const PurchaseOrders = () => {
           <Card.Body>
             <Tab.Content>
               <Tab.Pane eventKey={activeTab}>
-                <Table hover responsive className="mb-0">
-                  <thead className="bg-light">
+                <Table hover responsive>
+                  <thead>
                     <tr>
                       <th>PO Number</th>
-                      <th>Supplier</th>
+                      <th>Vendor</th>
                       <th>Date</th>
                       <th>Total</th>
                       <th>Status</th>
-                      <th>Invoice</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredOrders.map((order) => (
-                      <tr key={order.id}>
-                        <td>{order.id}</td>
-                        <td>{order.supplier}</td>
-                        <td>{order.date}</td>
-                        <td>${order.total.toFixed(2)}</td>
-                        <td>
-                          <div className="d-flex align-items-center">
-                            <FontAwesomeIcon 
-                              icon={getStatusIcon(order.status)} 
-                              className={`text-${getStatusBadge(order.status).props.bg} me-2`} 
-                            />
-                            {getStatusBadge(order.status)}
-                          </div>
-                        </td>
-                        <td>
-                          {order.hasInvoice ? (
-                            <Badge bg="success" pill>Received</Badge>
-                          ) : (
-                            <Badge bg="light" text="dark" pill>Pending</Badge>
-                          )}
-                        </td>
+                      <tr key={order.id || order.poNumber}>
+                        <td>{order.poNumber}</td>
+                        <td>{order.vendor?.name || 'N/A'}</td>
+                        <td>{order.date ? new Date(order.date).toLocaleDateString() : 'N/A'}</td>
+                        <td>${(order.total || 0).toFixed(2)}</td>
+                        <td>{getStatusBadge(order.status)}</td>
                         <td>
                           <div className="d-flex gap-2">
                             <Button variant="light" size="sm" title="View Details">
                               <FontAwesomeIcon icon={faEye} />
                             </Button>
-                            <Button variant="light" size="sm" title="Edit">
-                              <FontAwesomeIcon icon={faEdit} />
-                            </Button>
-                            <Button variant="light" size="sm" title="Delete">
+                            {order.status === 'pending' && (
+                              <Button variant="light" size="sm" title="Edit">
+                                <FontAwesomeIcon icon={faEdit} />
+                              </Button>
+                            )}
+                            <Button 
+                              variant="light" 
+                              size="sm" 
+                              className="text-danger" 
+                              title="Delete"
+                              disabled={order.status !== 'pending'} // Only allow delete for pending orders
+                            >
                               <FontAwesomeIcon icon={faTrash} />
                             </Button>
                           </div>
                         </td>
                       </tr>
                     ))}
+                    {filteredOrders.length === 0 && (
+                      <tr>
+                        <td colSpan="6" className="text-center py-4 text-muted">
+                          {loading ? 'Loading purchase orders...' : 'No purchase orders found'}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </Table>
               </Tab.Pane>
@@ -317,14 +372,8 @@ const PurchaseOrders = () => {
         </Card>
       </Tab.Container>
 
-      {/* Invoices Section */}
-      <div className="mt-5">
-        <POInvoices />
-      </div>
-
-      {/* Create PO Modal */}
-      <CreatePO 
-        show={showCreateModal} 
+      <CreatePO
+        show={showCreateModal}
         onHide={() => setShowCreateModal(false)}
         onSuccess={handlePOCreated}
       />

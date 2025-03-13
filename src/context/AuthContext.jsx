@@ -78,37 +78,83 @@ export const AuthProvider = ({ children }) => {
             setLoading(true);
             setError(null);
 
-            const response = await fetch(`${API_URL}/auth/login`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ username, password }),
-            });
+            // Try to connect to the actual backend
+            try {
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password }),
+                    // Add timeout to prevent hanging
+                    timeout: 5000
+                });
 
-            const contentType = response.headers.get('content-type');
-            if (!contentType || !contentType.includes('application/json')) {
-                throw new Error('Invalid server response');
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Invalid server response');
+                }
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || 'Login failed');
+                }
+
+                localStorage.setItem('token', data.token);
+                setUser(data.user);
+                setError(null);
+                
+                // Redirect based on user role
+                if (data.user.role === 'admin') {
+                    navigate('/sites');
+                } else {
+                    navigate('/dashboard');
+                }
+
+                return { success: true };
+            } catch (error) {
+                console.warn('API login failed, using development fallback:', error);
+                
+                // DEVELOPMENT FALLBACK - remove in production
+                if (process.env.NODE_ENV === 'development') {
+                    // Check for common test credentials
+                    if ((username === 'admin' && password === 'admin123') || 
+                        (username === 'user' && password === 'user123')) {
+                        
+                        // Create mock user and token
+                        const role = username === 'admin' ? 'admin' : 'user';
+                        const mockToken = 'dev-token-' + Math.random().toString(36).substring(2);
+                        const mockUser = {
+                            id: username === 'admin' ? 1 : 2,
+                            username,
+                            email: `${username}@example.com`,
+                            role
+                        };
+                        
+                        // Store mock auth data
+                        localStorage.setItem('token', mockToken);
+                        localStorage.setItem('userRole', role);
+                        localStorage.setItem('username', username);
+                        
+                        setUser(mockUser);
+                        
+                        // Redirect based on role
+                        if (role === 'admin') {
+                            navigate('/sites');
+                        } else {
+                            navigate('/dashboard');
+                        }
+                        
+                        return { success: true };
+                    } else {
+                        throw new Error('Invalid credentials (dev mode)');
+                    }
+                } else {
+                    // In production, pass through the original error
+                    throw error;
+                }
             }
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.message || 'Login failed');
-            }
-
-            localStorage.setItem('token', data.token);
-            setUser(data.user);
-            setError(null);
-            
-            // Redirect based on user role
-            if (data.user.role === 'admin') {
-                navigate('/sites');
-            } else {
-                navigate('/dashboard');
-            }
-
-            return { success: true };
         } catch (error) {
             console.error('Login error:', error);
             setError(error.message);

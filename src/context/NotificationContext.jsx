@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { Toast, ToastContainer } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -18,11 +18,16 @@ export const NotificationContext = createContext();
 export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    WebSocketService.connect();
+    // Only connect if not already connected
+    if (!isConnected) {
+      WebSocketService.connect();
+      setIsConnected(true);
+    }
 
-    // Subscribe to different notification types
+    // Subscribe to different notification types - only if we're connected
     const notificationTypes = {
       inventory_update: handleInventoryUpdate,
       low_stock_alert: handleLowStockAlert,
@@ -34,14 +39,17 @@ export const NotificationProvider = ({ children }) => {
       stock_movement: handleStockMovement
     };
 
-    Object.entries(notificationTypes).forEach(([type, handler]) => {
-      WebSocketService.subscribe(type, handler);
-    });
+    if (isConnected) {
+      Object.entries(notificationTypes).forEach(([type, handler]) => {
+        WebSocketService.subscribe(type, handler);
+      });
+    }
 
     return () => {
-      WebSocketService.disconnect();
+      // Don't disconnect on every unmount - this is a global service
+      // WebSocketService.disconnect();
     };
-  }, []);
+  }, [isConnected]);
 
   const getNotificationConfig = (type) => {
     const configs = {
@@ -75,48 +83,14 @@ export const NotificationProvider = ({ children }) => {
   };
 
   const playNotificationSound = () => {
-    try {
-      // Use a data URL for a simple beep sound instead of an external file
-      // This ensures the sound will always work without external dependencies
-      const soundDataUrl = 'data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU9vT18A';
-      
-      // Create audio context for better browser compatibility
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (AudioContext) {
-        const audioCtx = new AudioContext();
-        const oscillator = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-        
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(800, audioCtx.currentTime); // frequency in hertz
-        
-        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        
-        oscillator.start();
-        oscillator.stop(audioCtx.currentTime + 0.5);
-        return;
-      }
-      
-      // Fallback to Audio API if AudioContext is not available
-      const audio = new Audio(soundDataUrl);
-      audio.volume = 0.2; // Lower volume
-      audio.play().catch(error => {
-        console.log('Fallback notification sound failed:', error);
-      });
-    } catch (error) {
-      console.log('Unable to play notification sound:', error);
-      // Silent fail - notifications should work even without sound
-    }
+    // Sound notifications disabled
+    // No need to log this as it's expected behavior
   };
 
   const addNotification = (type, message, data = {}) => {
     const config = getNotificationConfig(type);
     const newNotification = {
-      id: Date.now(),
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       type,
       message,
       data,
@@ -125,7 +99,11 @@ export const NotificationProvider = ({ children }) => {
       ...config
     };
 
-    setNotifications(prev => [newNotification, ...prev]);
+    setNotifications(prev => {
+      const updatedNotifications = [newNotification, ...prev];
+      return updatedNotifications.slice(0, 10);
+    });
+    
     setUnreadCount(prev => prev + 1);
     
     // Play notification sound
@@ -238,37 +216,64 @@ export const NotificationProvider = ({ children }) => {
   );
 };
 
-const NotificationList = () => {
+// Memoized Toast component to prevent unnecessary re-renders
+const NotificationToast = React.memo(({ notification, onClose, onRead }) => {
+  return (
+    <Toast
+      key={notification.id}
+      onClose={onClose}
+      show={true}
+      bg={notification.variant}
+      className="mb-2"
+      onClick={onRead}
+    >
+      <Toast.Header>
+        <FontAwesomeIcon icon={notification.icon} className="me-2" />
+        <strong className="me-auto">{notification.title}</strong>
+        <small>
+          {new Date(notification.timestamp).toLocaleTimeString()}
+        </small>
+      </Toast.Header>
+      <Toast.Body className={notification.variant === 'light' ? '' : 'text-white'}>
+        {notification.message}
+      </Toast.Body>
+    </Toast>
+  );
+});
+
+// Optimized NotificationList using memoization
+const NotificationList = React.memo(() => {
   const { notifications, markAsRead, clearNotification } = useContext(NotificationContext);
+
+  // Only show the 5 most recent notifications to avoid cluttering the UI
+  const visibleNotifications = useMemo(() => {
+    return notifications.slice(0, 5);
+  }, [notifications]);
+
+  // Memoize the handlers to prevent unnecessary re-renders
+  const handleClose = useCallback((id) => {
+    clearNotification(id);
+  }, [clearNotification]);
+
+  const handleRead = useCallback((id) => {
+    markAsRead(id);
+  }, [markAsRead]);
 
   return (
     <ToastContainer
       className="position-fixed"
       style={{ top: '1rem', right: '1rem', zIndex: 1050 }}
     >
-      {notifications.slice(0, 5).map((notification) => (
-        <Toast
+      {visibleNotifications.map((notification) => (
+        <NotificationToast
           key={notification.id}
-          onClose={() => clearNotification(notification.id)}
-          show={true}
-          bg={notification.variant}
-          className="mb-2"
-          onClick={() => markAsRead(notification.id)}
-        >
-          <Toast.Header>
-            <FontAwesomeIcon icon={notification.icon} className="me-2" />
-            <strong className="me-auto">{notification.title}</strong>
-            <small>
-              {new Date(notification.timestamp).toLocaleTimeString()}
-            </small>
-          </Toast.Header>
-          <Toast.Body className={notification.variant === 'light' ? '' : 'text-white'}>
-            {notification.message}
-          </Toast.Body>
-        </Toast>
+          notification={notification}
+          onClose={() => handleClose(notification.id)}
+          onRead={() => handleRead(notification.id)}
+        />
       ))}
     </ToastContainer>
   );
-};
+});
 
 export const useNotification = () => useContext(NotificationContext); 

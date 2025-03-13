@@ -98,6 +98,7 @@ const SitesPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const { darkMode } = useTheme();
+    const [usingMockData, setUsingMockData] = useState(false);
 
     useEffect(() => {
         AOS.init({
@@ -123,23 +124,72 @@ const SitesPage = () => {
         const fetchSites = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const response = await fetch(`${API_URL}/sites`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || 'Failed to fetch sites');
+                const forceMockData = localStorage.getItem('useMockData') === 'true';
+                
+                // If we're in development mode and mock data is forced, skip API call
+                if (process.env.NODE_ENV === 'development' && forceMockData) {
+                    console.log('Using forced mock site data (from localStorage setting)');
+                    
+                    // Convert the mock data to match expected API format
+                    const mockSites = allSites.map((site, index) => ({
+                        id: index + 1,
+                        name: site.Name,
+                        location: site.Location || 'Unknown Location',
+                        image_url: site.Img,
+                        is_active: site.Avl !== 'NOT'
+                    }));
+                    
+                    setSites(mockSites);
+                    setUsingMockData(true);
+                    setLoading(false);
+                    return;
                 }
+                
+                try {
+                    // Try to fetch from real API first
+                    const response = await fetch(`${API_URL}/sites`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        // Add timeout to prevent hanging
+                        signal: AbortSignal.timeout(5000)
+                    });
 
-                const data = await response.json();
-                if (data.success) {
-                    setSites(data.sites);
-                } else {
-                    throw new Error(data.message || 'Failed to fetch sites');
+                    if (!response.ok) {
+                        throw new Error('API request failed');
+                    }
+
+                    const data = await response.json();
+                    if (data.success) {
+                        setSites(data.sites);
+                        return; // Exit if successful
+                    } else {
+                        throw new Error(data.message || 'Failed to fetch sites');
+                    }
+                } catch (apiError) {
+                    console.warn('API fetch failed, using development fallback:', apiError);
+                    
+                    // DEVELOPMENT FALLBACK - only in development mode
+                    if (process.env.NODE_ENV === 'development') {
+                        // Use mock data
+                        console.log('Using mock site data in development mode');
+                        
+                        // Convert the mock data to match expected API format
+                        const mockSites = allSites.map((site, index) => ({
+                            id: index + 1,
+                            name: site.Name,
+                            location: site.Location || 'Unknown Location',
+                            image_url: site.Img,
+                            is_active: site.Avl !== 'NOT'
+                        }));
+                        
+                        setSites(mockSites);
+                        setUsingMockData(true);
+                    } else {
+                        // In production, pass through the original error
+                        throw apiError;
+                    }
                 }
             } catch (err) {
                 console.error('Error fetching sites:', err);
@@ -150,6 +200,12 @@ const SitesPage = () => {
         };
 
         fetchSites();
+        
+        // Return a cleanup function to remove useMockData flag on unmount
+        return () => {
+            // Clear the mock data flag when component unmounts
+            localStorage.removeItem('useMockData');
+        };
     }, [user, navigate]);
 
     const allSites = [
@@ -179,6 +235,11 @@ const SitesPage = () => {
             (site.location && site.location.toLowerCase().includes(searchTerm.toLowerCase()))
         );
         
+        // If using mock data, we want to show all sites that match the search
+        if (usingMockData) {
+            return matchesSearch;
+        }
+        
         if (user && user.role === 'admin') {
             // Admin can see all sites that match the search
             return matchesSearch;
@@ -189,7 +250,8 @@ const SitesPage = () => {
         return false;
     });
 
-    const sortedSites = [...filteredSites.filter(site => !site.Avl), ...filteredSites.filter(site => site.Avl)];
+    // Update sortedSites to handle both real and mock data
+    const sortedSites = [...filteredSites.filter(site => site.is_active !== false), ...filteredSites.filter(site => site.is_active === false)];
 
     const afacadFont = {
         fontFamily: 'Afacad, sans-serif'
@@ -236,20 +298,73 @@ const SitesPage = () => {
 
     if (error) {
         return (
-            <div className="container py-4 dark-bg">
+            <div className={`container py-4 ${darkMode ? 'dark-bg' : 'bg-light'}`}>
                 <ThemeToggle />
                 <div className="alert alert-danger" role="alert">
-                    {error}
-                    <button 
-                        className="btn btn-outline-danger ms-3"
-                        onClick={() => window.location.reload()}
-                    >
-                        Retry
-                    </button>
+                    <h4 className="alert-heading">Error Loading Sites</h4>
+                    <p>{error}</p>
+                    
+                    {process.env.NODE_ENV === 'development' && (
+                        <div className="mt-3 p-3 bg-light rounded border">
+                            <h5>Development Mode Help</h5>
+                            <p>This error likely occurred because the backend server is not running or cannot be reached.</p>
+                            <ul>
+                                <li>Make sure your backend server is running on port 2000</li>
+                                <li>Check network connectivity between frontend and backend</li>
+                                <li>Ensure your database is properly connected to the backend</li>
+                            </ul>
+                        </div>
+                    )}
+                    
+                    <div className="mt-3">
+                        <button 
+                            className="btn btn-outline-danger me-2"
+                            onClick={() => window.location.reload()}
+                        >
+                            Retry
+                        </button>
+                        
+                        <button 
+                            className="btn btn-primary"
+                            onClick={() => {
+                                // Force using mock data in development mode
+                                if (process.env.NODE_ENV === 'development') {
+                                    localStorage.setItem('useMockData', 'true');
+                                    window.location.reload();
+                                }
+                            }}
+                        >
+                            Use Mock Data
+                        </button>
+                    </div>
                 </div>
             </div>
         );
     }
+
+    // Add a development mode banner when using mock data
+    const renderMockDataBanner = () => {
+        if (process.env.NODE_ENV === 'development' && usingMockData) {
+            return (
+                <div className="alert alert-warning mb-4">
+                    <div className="d-flex align-items-center">
+                        <span className="badge bg-warning text-dark me-2">MOCK DATA</span>
+                        <span>You are viewing mock site data. Backend connection is not available.</span>
+                        <button 
+                            className="btn btn-sm btn-outline-warning ms-auto"
+                            onClick={() => {
+                                localStorage.removeItem('useMockData');
+                                window.location.reload();
+                            }}
+                        >
+                            Try Real API
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+        return null;
+    };
 
     return (
         <div className={`min-vh-100 ${darkMode ? 'dark-bg' : 'bg-light'}`} style={afacadFont}>
@@ -315,6 +430,9 @@ const SitesPage = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Mock Data Banner */}
+            {renderMockDataBanner()}
 
             {/* Cards Grid */}
             <div className="container pb-5" style={{ maxWidth: '1140px' }}>

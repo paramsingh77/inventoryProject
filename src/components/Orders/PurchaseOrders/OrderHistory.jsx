@@ -81,7 +81,7 @@ const OrderHistory = () => {
                 <td>{order.id}</td>
                 <td>{order.date}</td>
                 <td>{order.customer}</td>
-                <td>${order.total.toFixed(2)}</td>
+                <td>${parseFloat(order.total || 0).toFixed(2)}</td>
                 <td>
                   <Badge bg={order.status === 'Completed' ? 'success' : 
                            order.status === 'Cancelled' ? 'danger' : 'warning'}>
