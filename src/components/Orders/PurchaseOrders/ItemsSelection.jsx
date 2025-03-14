@@ -284,7 +284,6 @@ const ItemsSelection = ({ formData, setFormData, vendorProducts = [] }) => {
   const addItem = (product) => {
     // Check if item already exists in the order
     const existingItem = formData.items.find(item => item.id === product.id);
-    
     if (existingItem) {
       // Update quantity if item already exists
       const newItems = formData.items.map(item => {
@@ -316,7 +315,7 @@ const ItemsSelection = ({ formData, setFormData, vendorProducts = [] }) => {
     });
     setFormData({ ...formData, items: newItems });
   };
-
+  
   // Filter products based on search
   const filteredProducts = vendorSpecificProducts.filter(product =>
     product.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -350,37 +349,37 @@ const ItemsSelection = ({ formData, setFormData, vendorProducts = [] }) => {
   };
 
   return (
-    <div className="mb-4">
+      <div className="mb-4">
       <Row className="g-4">
         <Col md={6}>
-          <div>
-            <h6 className="mb-3">
+      <div>
+        <h6 className="mb-3">
               {(formData.supplier || formData.vendor) 
                 ? `Add Items from ${getVendorDisplayName()}` 
-                : siteName 
-                  ? `Add Items from ${siteName}` 
-                  : 'Add Items'}
-            </h6>
-            
+            : siteName 
+              ? `Add Items from ${siteName}` 
+              : 'Add Items'}
+        </h6>
+        
             {(formData.supplier || formData.vendor) && (
-              <Alert variant="primary" className="d-flex align-items-center mb-3">
-                <FontAwesomeIcon icon={faInfoCircle} className="me-2" />
-                <div>
+          <Alert variant="primary" className="d-flex align-items-center mb-3">
+            <FontAwesomeIcon icon={faInfoCircle} className="me-2" />
+            <div>
                   Showing products from {getVendorDisplayName()} available at your site.
-                </div>
-              </Alert>
-            )}
-            
-            <InputGroup className="mb-3">
-              <InputGroup.Text>
-                <FontAwesomeIcon icon={faSearch} />
-              </InputGroup.Text>
-              <Form.Control
-                placeholder="Search products..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </InputGroup>
+            </div>
+          </Alert>
+        )}
+        
+        <InputGroup className="mb-3">
+          <InputGroup.Text>
+            <FontAwesomeIcon icon={faSearch} />
+          </InputGroup.Text>
+          <Form.Control
+            placeholder="Search products..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </InputGroup>
 
             {loading ? (
               <div className="text-center py-4">
@@ -390,46 +389,46 @@ const ItemsSelection = ({ formData, setFormData, vendorProducts = [] }) => {
                 <p className="mt-2">Loading products...</p>
               </div>
             ) : filteredProducts.length === 0 ? (
-              <Alert variant="warning">
-                <FontAwesomeIcon icon={faExclamationTriangle} className="me-2" />
+          <Alert variant="warning">
+            <FontAwesomeIcon icon={faExclamationTriangle} className="me-2" />
                 {(formData.supplier || formData.vendor) 
                   ? `No products found from ${getVendorDisplayName()} matching your search criteria.`
                   : 'No products found matching your search criteria. Please select a supplier first.'}
-              </Alert>
-            ) : (
+          </Alert>
+        ) : (
               <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                 <Table hover responsive>
-                  <thead>
-                    <tr>
+            <thead>
+              <tr>
                       <th style={{ width: '40%' }}>Name</th>
-                      <th>Category</th>
-                      <th>Price</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredProducts.map(product => (
-                      <tr key={product.id}>
+                <th>Category</th>
+                <th>Price</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredProducts.map(product => (
+                <tr key={product.id}>
                         <td>
                           <div className="fw-bold">{product.name}</div>
                           <small className="text-muted">{product.sku}</small>
                         </td>
                         <td>
                           <Badge bg="secondary" className="rounded-pill">{product.category}</Badge>
-                        </td>
+                  </td>
                         <td>${product.price?.toFixed(2) || '0.00'}</td>
-                        <td>
-                          <Button 
+                  <td>
+                    <Button
                             variant="primary" 
-                            size="sm"
-                            onClick={() => addItem(product)}
-                          >
+                      size="sm"
+                      onClick={() => addItem(product)}
+                    >
                             <FontAwesomeIcon icon={faPlus} /> Add
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
                 </Table>
               </div>
             )}
@@ -493,9 +492,9 @@ const ItemsSelection = ({ formData, setFormData, vendorProducts = [] }) => {
                     </td>
                   </tr>
                 </tfoot>
-              </Table>
-            )}
-          </div>
+          </Table>
+        )}
+      </div>
         </Col>
       </Row>
     </div>

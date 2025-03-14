@@ -104,7 +104,7 @@ router.get('/vendors', async (req, res) => {
             
             // Prepare vendors list
             let vendors = [];
-            
+             
             if (modelResult.rows.length > 0) {
                 // Extract model numbers
                 const modelNumbers = modelResult.rows.map(row => row.device_model);
@@ -151,7 +151,7 @@ router.get('/vendors', async (req, res) => {
             
             console.log(`Returning ${vendors.length} vendors`);
             res.json(vendors);
-            console.log("WE got vendors");
+            console.log("WE got");
         } finally {
             client.release();
         }

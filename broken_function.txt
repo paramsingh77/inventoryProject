@@ -1,0 +1,79 @@
+    return true;
+  };
+
+  // Move handler functions up before they're used in stepComponents
+  const handleSaveDraft = async () => {
+    try {
+      setSubmitting(true);
+      console.log('Starting handleSaveDraft function...');
+      
+      // Calculate totals before saving
+      calculateTotal();
+      
+      // Get user information from localStorage
+      const username = localStorage.getItem('username') || 'Unknown';
+      
+      // Prepare draft data
+      const draftData = {
+        order_number: formData.poNumber,
+        supplier_id: formData.vendor?.id || null,
+        ordered_by: username,
+        order_date: new Date().toISOString(),
+        expected_delivery: formData.deliveryDate || null,
+        status: 'draft', // Set status as draft
+        total_amount: formData.totalAmount || 0,
+        notes: formData.notes || '',
+        vendor_name: formData.vendor?.name || '',
+        vendor_email: formData.vendor?.email || '',
+        contact_person: formData.vendor?.contactPerson || '',
+        phone_number: formData.vendor?.phone || '',
+        items: formData.items || []
+      };
+      
+      console.log('Sending POST request to /api/purchase-orders with status: draft');
+      const response = await axios.post('/api/purchase-orders', draftData);
+      console.log('Draft saved successfully:', response.data);
+      
+      // Show success notification
+      addNotification('success', 'Purchase Order saved as draft');
+      
+      // Close modal if needed
+      onHide();
+      
+      // Notify parent component if needed
+      if (onSuccess) {
+        onSuccess({
+          ...draftData,
+          id: response.data.purchaseOrder?.id || formData.poNumber,
+      // Save to the database via API
+      try {
+        console.log('Sending POST request to /api/purchase-orders with status: draft');
+        const response = await axios.post('/api/purchase-orders', draftData);
+        console.log('Draft saved successfully:', response.data);
+        
+        // Show success notification
+        addNotification('success', 'Purchase Order saved as draft');
+        
+        // Close modal if needed
+        onHide();
+        
+        // Notify parent component if needed
+        if (onSuccess) {
+          onSuccess({
+            ...draftData,
+            id: response.data.purchaseOrder?.id || formData.poNumber,
+            status: 'draft'
+          });
+        }
+      } catch (apiError) {
+        console.error('Error saving draft:', apiError);
+        addNotification('error', `Failed to save draft: ${apiError.message}`);
+      }
+    } catch (error) {
+      console.error('Error in handleSaveDraft:', error);
+      addNotification('error', 'Failed to save draft');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+

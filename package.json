@@ -37,7 +37,8 @@
     "eject": "react-scripts eject",
     "init-db": "node backend/scripts/initDb.js",
     "seed-db": "node backend/scripts/seedDb.js",
-    "create-db": "node backend/scripts/createDb.js"
+    "create-db": "node backend/scripts/createDb.js",
+    "update-db": "node backend/scripts/updateSchema.js"
   },
   "eslintConfig": {
     "extends": [

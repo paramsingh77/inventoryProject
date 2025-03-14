@@ -36,6 +36,7 @@ import {
   testFileUpload
 } from '../../../services/emailService';
 import axios from 'axios';  // Import axios for API calls
+import api from '../../../utils/api';
 
 // Helper Functions - Move outside component
 const generatePONumber = () => {
@@ -370,6 +371,8 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
       vendor => vendor.id === vendorId || vendor.id === parseInt(vendorId)
     );
     
+    console.log("se;ected",selectedVendor);
+    
     if (selectedVendor) {
       setFormData(prev => ({
         ...prev,
@@ -418,40 +421,98 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
 
   // Add validation function before it's used
   const validatePurchaseOrder = () => {
+    // Create a working copy of the form data
+    const workingFormData = { ...formData };
+    
+    // Ensure vendor object exists
+    if (!workingFormData.vendor) {
+        workingFormData.vendor = {};
+    }
+    
     console.log("Validating purchase order with data:", {
-      vendorId: formData.vendor.id,
-      vendorName: formData.vendor.name,
-      supplierField: formData.supplier,
-      itemsCount: formData.items.length
+        vendorId: workingFormData.vendor?.id,
+        vendorName: workingFormData.vendor?.name,
+        vendorEmail: workingFormData.vendor?.email,
+        vendorPhone: workingFormData.vendor?.phone,
+        supplierField: workingFormData.supplier,
+        directVendorEmail: workingFormData.vendorEmail,
+        directVendorPhone: workingFormData.vendorPhone,
+        itemsCount: workingFormData.items?.length || 0,
+        deliveryDate: workingFormData.deliveryDate,
+        paymentTerms: workingFormData.paymentTerms
     });
     
     // Validate vendor information
-    if (!formData.supplier) {
-      console.error("No supplier selected");
-      addNotification('warning', 'Please select a supplier from the dropdown');
-      return false;
+    if (!workingFormData.vendor.name) {
+        console.error("No vendor selected");
+        addNotification('warning', 'Please select a vendor from the dropdown');
+        return false;
     }
     
-    if (!formData.vendor.name) {
-      console.error("Vendor name missing despite supplier selection", formData.supplier);
-      addNotification('warning', 'Vendor name is missing. Please reselect a supplier.');
-      return false;
+    // Auto-generate email if missing
+    if (!workingFormData.vendor.email && !workingFormData.vendorEmail) {
+        // Generate a default email based on vendor name
+        const defaultEmail = `sales@${workingFormData.vendor.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
+        console.log("Auto-generating vendor email:", defaultEmail);
+        
+        // Update the form data
+        workingFormData.vendor.email = defaultEmail;
+        workingFormData.vendorEmail = defaultEmail;
+        
+        // Update the actual form data
+        setFormData(prev => ({
+            ...prev,
+            vendor: {
+                ...prev.vendor,
+                email: defaultEmail
+            },
+            vendorEmail: defaultEmail
+        }));
     }
     
-    if (!formData.vendorEmail) {
-      addNotification('warning', 'Please enter vendor email address');
-      return false;
+    // Auto-generate phone if missing
+    if (!workingFormData.vendor.phone && !workingFormData.vendorPhone) {
+        const defaultPhone = '555-0000';
+        console.log("Auto-generating vendor phone:", defaultPhone);
+        
+        // Update the form data
+        workingFormData.vendor.phone = defaultPhone;
+        workingFormData.vendorPhone = defaultPhone;
+        
+        // Update the actual form data
+        setFormData(prev => ({
+            ...prev,
+            vendor: {
+                ...prev.vendor,
+                phone: defaultPhone
+            },
+            vendorPhone: defaultPhone
+        }));
     }
-    
-    if (!formData.vendorPhone) {
-      addNotification('warning', 'Please enter vendor phone number');
-      return false;
+
+    // Validate delivery date
+    if (!workingFormData.deliveryDate) {
+        addNotification('warning', 'Please select an expected delivery date');
+        return false;
+    }
+
+    // Validate payment terms
+    if (!workingFormData.paymentTerms) {
+        addNotification('warning', 'Please select payment terms');
+        return false;
     }
     
     // Validate items
-    if (formData.items.length === 0) {
-      addNotification('warning', 'Please add at least one item to the order');
-      return false;
+    if (!workingFormData.items || workingFormData.items.length === 0) {
+        addNotification('warning', 'Please add at least one item to the order');
+        return false;
+    }
+
+    // Validate item details
+    const invalidItems = workingFormData.items.filter(item => !item.name || !item.quantity || !item.price);
+    if (invalidItems.length > 0) {
+        addNotification('warning', 'Please ensure all items have a name, quantity, and price');
+        return false;
     }
     
     // All validations passed
@@ -463,127 +524,191 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
   const handleSaveDraft = async () => {
     try {
       setSubmitting(true);
+      console.log('Starting handleSaveDraft function...');
       
       // Calculate totals before saving
       calculateTotal();
       
-      // In a real app, you would save to the backend here
+      // Get user information from localStorage
+      const username = localStorage.getItem('username') || 'Unknown';
+      
+      // Prepare draft data
       const draftData = {
-        ...formData,
-        status: 'draft',
-        lastUpdated: new Date().toISOString()
+        order_number: formData.poNumber,
+        supplier_id: formData.vendor?.id || null,
+        ordered_by: username,
+        order_date: new Date().toISOString(),
+        expected_delivery: formData.deliveryDate || null,
+        status: 'draft', // Set status as draft
+        total_amount: formData.totalAmount || 0,
+        notes: formData.notes || '',
+        vendor_name: formData.vendor?.name || '',
+        vendor_email: formData.vendor?.email || '',
+        contact_person: formData.vendor?.contactPerson || '',
+        phone_number: formData.vendor?.phone || '',
+        items: formData.items || []
       };
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Save to the database via API
+      console.log('Sending POST request to /api/purchase-orders with status: draft');
+      const response = await axios.post('/api/purchase-orders', draftData);
+      console.log('Draft saved successfully:', response.data);
       
       // Show success notification
       addNotification('success', 'Purchase Order saved as draft');
       
       // Close modal if needed
-      // onHide();
+      onHide();
       
-      // In a real app, you might redirect to drafts list
-      // or stay on the same screen with updated state
+      // Notify parent component if needed
+      if (onSuccess) {
+        onSuccess({
+          ...draftData,
+          id: response.data.purchaseOrder?.id || formData.poNumber,
+          status: 'draft'
+        });
+      }
     } catch (error) {
-      console.error('Error saving draft PO:', error);
-      addNotification('error', 'Failed to save draft');
+      console.error('Error in handleSaveDraft:', error);
+      addNotification('error', `Failed to save draft: ${error.message}`);
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleSendForApproval = async () => {
+    console.log("form data", formData);
     try {
-      setSubmitting(true);
-      console.log("Sending PO for approval with form data:", {
-        supplier: formData.supplier,
-        vendorName: formData.vendor.name,
-        vendorEmail: formData.vendorEmail,
-        vendorPhone: formData.vendorPhone,
-        itemsCount: formData.items.length
-      });
-      
-      // Run validations
-      if (!validatePurchaseOrder()) {
-        setSubmitting(false);
-        return;
-      }
-      
-      // Calculate totals before submission
-      calculateTotal();
-      
-      // Get user information from localStorage
-      const username = localStorage.getItem('username') || 'Unknown';
-      const userRole = localStorage.getItem('userRole') || 'User';
-      const department = formData.department || 'Not specified';
-      
-      // Prepare approval request payload with status explicitly set to 'pending'
-      const approvalRequest = {
-        poId: formData.id || Date.now(),
-        poNumber: formData.poNumber,
-        vendorName: formData.vendor.name,
-        vendorEmail: formData.vendorEmail,
-        contactPerson: formData.vendorEmail ? formData.vendorEmail.split('@')[0] : 'Contact',
-        phoneNumber: formData.vendorPhone,
-        department,
-        requestedBy: username,
-        requestDate: new Date().toISOString(),
-        total: parseFloat(formData.totalAmount),
-        items: formData.items,
-        notes: formData.notes || '',
-        userRole,
-        status: 'pending' // Explicitly set status to pending
-      };
-      
-      // Save the PO to the database via API
-      try {
-        // Make the API call to save the PO
-        const response = await axios.post('/api/purchase-orders', {
-          ...approvalRequest,
-          order_number: approvalRequest.poNumber,
-          vendor_name: approvalRequest.vendorName,
-          vendor_email: approvalRequest.vendorEmail,
-          contact_person: approvalRequest.contactPerson,
-          phone_number: approvalRequest.phoneNumber,
-          total_amount: approvalRequest.total,
-          status: 'pending',
-          username: username
+        setSubmitting(true);
+        console.log("Starting handleSendForApproval function...");
+        
+        // Create a working copy of the form data to ensure we have all required fields
+        const updatedFormData = { ...formData };
+        
+        // Ensure vendor object exists
+        if (!updatedFormData.vendor) {
+            updatedFormData.vendor = {};
+        }
+        
+        // Ensure vendor has a name
+        if (!updatedFormData.vendor.name && updatedFormData.vendorName) {
+            updatedFormData.vendor.name = updatedFormData.vendorName;
+        }
+        
+        // Ensure vendor has an email (critical for validation)
+        if (!updatedFormData.vendor.email) {
+            // Try to use direct vendorEmail field first
+            if (updatedFormData.vendorEmail) {
+                updatedFormData.vendor.email = updatedFormData.vendorEmail;
+            } else if (updatedFormData.vendor.name) {
+                // Generate a default email based on vendor name
+                updatedFormData.vendor.email = `sales@${updatedFormData.vendor.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
+                updatedFormData.vendorEmail = updatedFormData.vendor.email;
+                console.log("Generated default vendor email:", updatedFormData.vendor.email);
+            }
+        }
+        
+        // Ensure vendor has a phone number
+        if (!updatedFormData.vendor.phone) {
+            // Try to use direct vendorPhone field first
+            if (updatedFormData.vendorPhone) {
+                updatedFormData.vendor.phone = updatedFormData.vendorPhone;
+            } else {
+                // Set a default phone number
+                updatedFormData.vendor.phone = '555-0000';
+                updatedFormData.vendorPhone = updatedFormData.vendor.phone;
+                console.log("Set default vendor phone:", updatedFormData.vendor.phone);
+            }
+        }
+        
+        // Update the form data with our fixed version
+        setFormData(updatedFormData);
+        
+        console.log("Sending PO for approval with form data:", {
+            vendor: updatedFormData.vendor,
+            items: updatedFormData.items,
+            totalAmount: updatedFormData.totalAmount
         });
         
-        console.log('Purchase order created:', response.data);
-        
-        // Update the approvalRequest with the DB-generated ID if available
-        if (response.data.purchaseOrder && response.data.purchaseOrder.id) {
-          approvalRequest.poId = response.data.purchaseOrder.id;
+        // Run validations
+        if (!validatePurchaseOrder()) {
+            console.log("Validation failed, aborting approval request");
+            setSubmitting(false);
+            return;
         }
-      } catch (apiError) {
-        console.error('Error saving purchase order:', apiError);
-        addNotification('error', `Failed to save purchase order: ${apiError.message}`);
-        setSubmitting(false);
-        return;
-      }
-      
-      console.log('Sending approval request:', approvalRequest);
-      
-      // Emit socket event for approval notification
-      if (window.socket) {
-        window.socket.emit('po_approval_requested', approvalRequest);
-      }
-      
-      // Show success notification
-      addNotification('success', 'Purchase Order sent for approval');
-      
-      // Close modal and refresh orders list
-      onHide();
-      if (onSuccess) {
-        onSuccess(approvalRequest);
-      }
+        
+        // Calculate totals before submission
+        calculateTotal();
+        
+        // Get user information from localStorage
+        const username = localStorage.getItem('username') || 'Unknown';
+        const userRole = localStorage.getItem('userRole') || 'User';
+        const department = formData.department || 'Not specified';
+        
+        // Prepare the API payload with properly formatted data
+        const purchaseOrderData = {
+            order_number: updatedFormData.poNumber,
+            supplier_id: null, // We're not using supplier_id at the moment
+            expected_delivery: updatedFormData.deliveryDate,
+            status: 'pending',
+            total_amount: parseFloat(updatedFormData.totalAmount || 0),
+            notes: updatedFormData.notes || '',
+            vendor_name: updatedFormData.vendor.name,
+            vendor_email: updatedFormData.vendor.email || updatedFormData.vendorEmail,
+            contact_person: updatedFormData.vendor.contactPerson || '',
+            phone_number: updatedFormData.vendor.phone || updatedFormData.vendorPhone || '',
+            items: updatedFormData.items.map(item => ({
+                item_type: item.type || 'product',
+                item_id: item.id || null,
+                quantity: parseInt(item.quantity) || 1,
+                unit_price: parseFloat(item.price) || 0,
+                total_price: parseFloat((item.quantity || 1) * (item.price || 0)),
+                description: item.description || '',
+                notes: item.notes || ''
+            }))
+        };
+        
+        console.log('Sending PO data to API:', purchaseOrderData);
+        
+        // Use our API utility with proper error handling
+        const response = await api.post('/api/purchase-orders', purchaseOrderData);
+        
+        console.log('Purchase order created successfully:', response.data);
+        
+        // Show success notification
+        addNotification('success', 'Purchase Order sent for approval');
+        
+        // Close modal and refresh orders list
+        onHide();
+        if (onSuccess) {
+            onSuccess({
+                ...purchaseOrderData,
+                id: response.data.purchaseOrder?.id,
+                poNumber: purchaseOrderData.order_number,
+                status: 'pending'
+            });
+        }
     } catch (error) {
-      console.error('Error sending PO for approval:', error);
-      addNotification('error', 'Failed to send for approval');
+        console.error('Error sending PO for approval:', error);
+        
+        // Provide more detailed error messaging
+        const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message;
+        addNotification('error', `Failed to send for approval: ${errorMessage}`);
+        
+        // Log detailed error information
+        if (error.response) {
+            console.error('API Error Details:', {
+                status: error.response.status,
+                data: error.response.data,
+                headers: error.response.headers
+            });
+        } else if (error.request) {
+            console.error('API Request Error (No Response):', error.request);
+        } else {
+            console.error('Request Setup Error:', error.message);
+        }
     } finally {
-      setSubmitting(false);
+        setSubmitting(false);
     }
   };
 

@@ -164,113 +164,151 @@ router.get('/purchase-orders/:id', authMiddleware, async (req, res) => {
 
 // Create a new purchase order
 router.post('/purchase-orders', authMiddleware, async (req, res) => {
+    const client = await pool.connect();
     try {
-        const { 
-            order_number,
-            supplier_id,
-            ordered_by,
-            expected_delivery,
-            status,
-            total_amount,
-            notes,
-            items
-        } = req.body;
+        console.log('Received PO creation request:', JSON.stringify(req.body, null, 2));
         
-        // Start a transaction
-        const client = await pool.connect();
+        await client.query('BEGIN');
+
+        // Validate required fields
+        if (!req.body.order_number && !req.body.poNumber) {
+            throw new Error('Order number is required');
+        }
+
+        // Get order_items schema to check item_id type
+        const itemsSchemaQuery = `
+            SELECT column_name, data_type 
+            FROM information_schema.columns 
+            WHERE table_name = 'order_items'
+            AND column_name = 'item_id'
+        `;
+        const itemsSchema = await client.query(itemsSchemaQuery);
+        const itemIdType = itemsSchema.rows[0]?.data_type;
         
-        try {
-            await client.query('BEGIN');
-            
-            // Insert the purchase order
-            const insertOrderQuery = `
-                INSERT INTO purchase_orders (
-                    order_number, 
-                    supplier_id, 
-                    ordered_by, 
-                    expected_delivery, 
-                    status, 
-                    total_amount, 
-                    notes
-                ) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                RETURNING *
-            `;
-            
-            const orderResult = await client.query(insertOrderQuery, [
+        console.log(`item_id column type is: ${itemIdType}`);
+        
+        // Insert the purchase order
+        const insertOrderQuery = `
+            INSERT INTO purchase_orders (
                 order_number,
                 supplier_id,
-                ordered_by,
                 expected_delivery,
-                status || 'draft', // Default to draft if not specified
+                status,
                 total_amount,
-                notes
-            ]);
+                notes,
+                vendor_name,
+                vendor_email,
+                contact_person,
+                phone_number,
+                order_date
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
+            RETURNING *
+        `;
+
+        const orderValues = [
+            req.body.order_number || req.body.poNumber,
+            null,  // supplier_id is nullable
+            req.body.expected_delivery || req.body.deliveryDate || null,
+            'pending',
+            parseFloat(req.body.total_amount || req.body.totalAmount || 0),
+            req.body.notes || '',
+            req.body.vendor?.name || '',
+            req.body.vendor?.email || '',
+            req.body.vendor?.contactPerson || '',
+            req.body.vendor?.phone || ''
+        ];
+
+        console.log('Executing order insert with values:', orderValues);
+        const orderResult = await client.query(insertOrderQuery, orderValues);
+        const purchaseOrder = orderResult.rows[0];
+
+        // Insert the items if provided
+        if (req.body.items && req.body.items.length > 0) {
+            console.log(`Processing ${req.body.items.length} items for order ${purchaseOrder.id}`);
             
-            const purchaseOrder = orderResult.rows[0];
-            
-            // Insert the order items if provided
-            if (items && items.length > 0) {
-                for (const item of items) {
-                    const insertItemQuery = `
-                        INSERT INTO order_items (
-                            order_id,
-                            item_type,
-                            item_id,
-                            quantity,
-                            unit_price,
-                            total_price,
-                            notes
-                        )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    `;
+            for (const item of req.body.items) {
+                console.log('Processing item:', item);
+                
+                // For integer item_id, extract numeric part or use null
+                let itemId = null;
+                if (item.id || item.item_id) {
+                    const rawItemId = item.id || item.item_id;
                     
-                    await client.query(insertItemQuery, [
-                        purchaseOrder.id,
-                        item.item_type,
-                        item.item_id,
-                        item.quantity,
-                        item.unit_price,
-                        item.quantity * item.unit_price, // Calculate total price
-                        item.notes
-                    ]);
+                    if (itemIdType === 'integer') {
+                        // If item_id is integer type, try to extract numeric part
+                        const numericMatch = String(rawItemId).match(/\d+/);
+                        itemId = numericMatch ? parseInt(numericMatch[0]) : null;
+                    } else {
+                        // Otherwise use as is (for varchar/text columns)
+                        itemId = String(rawItemId);
+                    }
                 }
+                
+                const insertItemQuery = `
+                    INSERT INTO order_items (
+                        order_id,
+                        item_type,
+                        item_id,
+                        quantity,
+                        unit_price,
+                        total_price,
+                        notes
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                `;
+
+                const itemValues = [
+                    purchaseOrder.id,
+                    item.type || item.item_type || 'product',
+                    itemId,
+                    parseInt(item.quantity) || 0,
+                    parseFloat(item.price || item.unit_price) || 0,
+                    parseFloat((item.quantity || 0) * (item.price || item.unit_price || 0)) || 0,
+                    item.description || item.notes || ''
+                ];
+
+                console.log('Inserting item with values:', itemValues);
+                await client.query(insertItemQuery, itemValues);
             }
-            
-            await client.query('COMMIT');
-            
-            // If purchase order is submitted for approval (status = pending)
-            if (status === 'pending') {
-                // Emit socket event for admin notification
-                socketIO.getIO().emit('po_approval_requested', {
-                    poId: purchaseOrder.id,
-                    poNumber: purchaseOrder.order_number,
-                    vendorName: req.body.vendor_name || req.body.vendorName || 'Not specified',
-                    vendorEmail: req.body.vendor_email || req.body.vendorEmail || '',
-                    requestedBy: req.body.username || 'User',
-                    department: req.body.department || 'Not specified',
-                    requestDate: new Date().toISOString(),
-                    total: total_amount,
-                    items: items || [],
-                    contactPerson: req.body.contact_person || req.body.contactPerson || '',
-                    phoneNumber: req.body.phone_number || req.body.phoneNumber || ''
-                });
-            }
-            
-            res.status(201).json({
-                message: 'Purchase order created successfully',
-                purchaseOrder
-            });
-            
-        } catch (err) {
-            await client.query('ROLLBACK');
-            throw err;
-        } finally {
-            client.release();
         }
+
+        await client.query('COMMIT');
+
+        // Emit socket event for admin notification
+        socketIO.getIO().emit('po_approval_requested', {
+            poId: purchaseOrder.id,
+            poNumber: purchaseOrder.order_number,
+            vendorName: req.body.vendor?.name || 'Not specified',
+            vendorEmail: req.body.vendor?.email || '',
+            requestedBy: 'System',
+            requestDate: new Date().toISOString(),
+            total: purchaseOrder.total_amount,
+            items: req.body.items || []
+        });
+
+        res.status(201).json({
+            message: 'Purchase order created successfully',
+            purchaseOrder
+        });
+
     } catch (error) {
-        console.error('Error creating purchase order:', error);
-        res.status(500).json({ message: 'Error creating purchase order', error: error.message });
+        await client.query('ROLLBACK');
+        console.error('Error creating purchase order:', {
+            message: error.message,
+            stack: error.stack,
+            code: error.code,
+            detail: error.detail,
+            body: JSON.stringify(req.body)
+        });
+        
+        res.status(500).json({
+            message: 'Error creating purchase order',
+            error: error.message,
+            detail: error.detail || 'No additional details available'
+        });
+    } finally {
+        client.release();
     }
 });
 
@@ -435,6 +473,73 @@ router.delete('/purchase-orders/:id', authMiddleware, adminMiddleware, async (re
     } catch (error) {
         console.error('Error deleting purchase order:', error);
         res.status(500).json({ message: 'Error deleting purchase order', error: error.message });
+    }
+});
+
+// Diagnostic endpoint to check database schema
+router.get('/purchase-orders/check-schema', async (req, res) => {
+    try {
+        console.log('Checking database schema');
+        
+        const client = await pool.connect();
+        try {
+            // Check if purchase_orders table exists
+            const purchaseOrdersTable = await client.query(`
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'purchase_orders'
+                );
+            `);
+            
+            // Check if order_items table exists
+            const orderItemsTable = await client.query(`
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'order_items'
+                );
+            `);
+            
+            // Get purchase_orders columns
+            let purchaseOrdersColumns = [];
+            if (purchaseOrdersTable.rows[0].exists) {
+                const poColumnsResult = await client.query(`
+                    SELECT column_name, data_type, is_nullable
+                    FROM information_schema.columns
+                    WHERE table_name = 'purchase_orders'
+                    ORDER BY ordinal_position;
+                `);
+                purchaseOrdersColumns = poColumnsResult.rows;
+            }
+            
+            // Get order_items columns
+            let orderItemsColumns = [];
+            if (orderItemsTable.rows[0].exists) {
+                const itemsColumnsResult = await client.query(`
+                    SELECT column_name, data_type, is_nullable
+                    FROM information_schema.columns
+                    WHERE table_name = 'order_items'
+                    ORDER BY ordinal_position;
+                `);
+                orderItemsColumns = itemsColumnsResult.rows;
+            }
+            
+            // Send schema information
+            res.json({
+                purchaseOrdersTableExists: purchaseOrdersTable.rows[0].exists,
+                orderItemsTableExists: orderItemsTable.rows[0].exists,
+                purchaseOrdersColumns,
+                orderItemsColumns,
+                checkTimestamp: new Date().toISOString()
+            });
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('Error checking schema:', error);
+        res.status(500).json({
+            message: 'Error checking database schema',
+            error: error.message
+        });
     }
 });
 

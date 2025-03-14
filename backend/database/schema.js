@@ -175,6 +175,10 @@ async function initializeSchema() {
                 status VARCHAR(50),
                 total_amount DECIMAL(10,2),
                 notes TEXT,
+                vendor_name VARCHAR(255),
+                vendor_email VARCHAR(255),
+                contact_person VARCHAR(255),
+                phone_number VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
