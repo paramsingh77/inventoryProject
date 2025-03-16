@@ -135,14 +135,20 @@ const startServer = async () => {
       console.log('📧 Email functionality is available even without database');
     });
 
-    // Try to initialize database schema, but don't let failure stop the server
+    // Try to check database schema, but don't initialize/reset it on every startup
     try {
-      // Initialize database schema
-      await initializeSchema();
-      
       // Check if schema is properly initialized
       const schemaStatus = await checkSchema();
       console.log('✅ Schema status:', schemaStatus);
+      
+      // Only initialize schema if it's not properly set up
+      if (!schemaStatus.exists) {
+        console.log('⚠️ Schema does not exist, initializing...');
+        await initializeSchema();
+        console.log('✅ Schema initialized successfully');
+      } else {
+        console.log('✅ Using existing database schema');
+      }
     } catch (dbError) {
       console.error('⚠️ Database connection failed:', dbError.message);
       console.warn('⚠️ Running in limited mode - some features will not work');

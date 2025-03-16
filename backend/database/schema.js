@@ -24,263 +24,280 @@ async function initializeSchema() {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-
-        // Drop existing tables if they exist
-        await client.query(`
-            DROP TABLE IF EXISTS device_inventory CASCADE;
-            DROP TABLE IF EXISTS software_licenses CASCADE;
-            DROP TABLE IF EXISTS peripherals CASCADE;
-            DROP TABLE IF EXISTS spare_parts CASCADE;
-            DROP TABLE IF EXISTS device_assignments CASCADE;
-            DROP TABLE IF EXISTS maintenance_logs CASCADE;
-            DROP TABLE IF EXISTS purchase_orders CASCADE;
-            DROP TABLE IF EXISTS order_items CASCADE;
-            DROP TABLE IF EXISTS suppliers CASCADE;
-            DROP TABLE IF EXISTS supplier_contracts CASCADE;
-            DROP TABLE IF EXISTS warranties CASCADE;
-            DROP TABLE IF EXISTS activity_logs CASCADE;
-        `);
-
-        // Create device inventory table
-        await client.query(`
-            CREATE TABLE device_inventory (
-                id SERIAL PRIMARY KEY,
-                site_name VARCHAR(100),
-                device_hostname VARCHAR(100),
-                device_description VARCHAR(200),
-                last_user VARCHAR(100),
-                last_seen VARCHAR(100),
-                device_type VARCHAR(100),
-                device_model VARCHAR(200),
-                operating_system VARCHAR(200),
-                serial_number VARCHAR(100) UNIQUE,
-                device_cpu VARCHAR(200),
-                mac_addresses TEXT[],
-                status VARCHAR(50) DEFAULT 'active',
-                vendor VARCHAR(100),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_check_in TIMESTAMP,
-                ip_address VARCHAR(45),
-                location VARCHAR(100),
-                department VARCHAR(100),
-                notes TEXT,
-                asset_tag VARCHAR(50),
-                purchase_date DATE,
-                warranty_expiry DATE,
-                lifecycle_status VARCHAR(50)
+        
+        console.log('Connected to the database');
+        
+        // Check if purchase_orders table already exists
+        const tableCheck = await client.query(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'purchase_orders'
             );
         `);
+        
+        // Only drop and recreate tables if they don't exist
+        if (!tableCheck.rows[0].exists) {
+            console.log('Tables do not exist, creating schema...');
+            
+            // Drop existing tables if they exist
+            await client.query(`
+                DROP TABLE IF EXISTS device_inventory CASCADE;
+                DROP TABLE IF EXISTS software_licenses CASCADE;
+                DROP TABLE IF EXISTS peripherals CASCADE;
+                DROP TABLE IF EXISTS spare_parts CASCADE;
+                DROP TABLE IF EXISTS device_assignments CASCADE;
+                DROP TABLE IF EXISTS maintenance_logs CASCADE;
+                DROP TABLE IF EXISTS purchase_orders CASCADE;
+                DROP TABLE IF EXISTS order_items CASCADE;
+                DROP TABLE IF EXISTS suppliers CASCADE;
+                DROP TABLE IF EXISTS supplier_contracts CASCADE;
+                DROP TABLE IF EXISTS warranties CASCADE;
+                DROP TABLE IF EXISTS activity_logs CASCADE;
+            `);
+            
+            // Create device inventory table
+            await client.query(`
+                CREATE TABLE device_inventory (
+                    id SERIAL PRIMARY KEY,
+                    site_name VARCHAR(100),
+                    device_hostname VARCHAR(100),
+                    device_description VARCHAR(200),
+                    last_user VARCHAR(100),
+                    last_seen VARCHAR(100),
+                    device_type VARCHAR(100),
+                    device_model VARCHAR(200),
+                    operating_system VARCHAR(200),
+                    serial_number VARCHAR(100) UNIQUE,
+                    device_cpu VARCHAR(200),
+                    mac_addresses TEXT[],
+                    status VARCHAR(50) DEFAULT 'active',
+                    vendor VARCHAR(100),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_check_in TIMESTAMP,
+                    ip_address VARCHAR(45),
+                    location VARCHAR(100),
+                    department VARCHAR(100),
+                    notes TEXT,
+                    asset_tag VARCHAR(50),
+                    purchase_date DATE,
+                    warranty_expiry DATE,
+                    lifecycle_status VARCHAR(50)
+                );
+            `);
 
-        // Create software licenses table
-        await client.query(`
-            CREATE TABLE software_licenses (
-                id SERIAL PRIMARY KEY,
-                software_name VARCHAR(200) NOT NULL,
-                license_key TEXT,
-                type VARCHAR(50),
-                seats_total INTEGER,
-                seats_used INTEGER DEFAULT 0,
-                purchase_date DATE,
-                expiry_date DATE,
-                cost DECIMAL(10,2),
-                vendor VARCHAR(100),
-                status VARCHAR(50),
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+            // Create software licenses table
+            await client.query(`
+                CREATE TABLE software_licenses (
+                    id SERIAL PRIMARY KEY,
+                    software_name VARCHAR(200) NOT NULL,
+                    license_key TEXT,
+                    type VARCHAR(50),
+                    seats_total INTEGER,
+                    seats_used INTEGER DEFAULT 0,
+                    purchase_date DATE,
+                    expiry_date DATE,
+                    cost DECIMAL(10,2),
+                    vendor VARCHAR(100),
+                    status VARCHAR(50),
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
 
-        // Create peripherals table
-        await client.query(`
-            CREATE TABLE peripherals (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(200) NOT NULL,
-                type VARCHAR(50),
-                model VARCHAR(100),
-                serial_number VARCHAR(100),
-                status VARCHAR(50),
-                assigned_to INTEGER REFERENCES users(id),
-                location VARCHAR(100),
-                purchase_date DATE,
-                warranty_expiry DATE,
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+            // Create peripherals table
+            await client.query(`
+                CREATE TABLE peripherals (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(200) NOT NULL,
+                    type VARCHAR(50),
+                    model VARCHAR(100),
+                    serial_number VARCHAR(100),
+                    status VARCHAR(50),
+                    assigned_to INTEGER REFERENCES users(id),
+                    location VARCHAR(100),
+                    purchase_date DATE,
+                    warranty_expiry DATE,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
 
-        // Create spare parts table
-        await client.query(`
-            CREATE TABLE spare_parts (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(200) NOT NULL,
-                part_number VARCHAR(100),
-                category VARCHAR(50),
-                quantity INTEGER DEFAULT 0,
-                minimum_quantity INTEGER DEFAULT 1,
-                location VARCHAR(100),
-                supplier_id INTEGER,
-                cost_per_unit DECIMAL(10,2),
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+            // Create spare parts table
+            await client.query(`
+                CREATE TABLE spare_parts (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(200) NOT NULL,
+                    part_number VARCHAR(100),
+                    category VARCHAR(50),
+                    quantity INTEGER DEFAULT 0,
+                    minimum_quantity INTEGER DEFAULT 1,
+                    location VARCHAR(100),
+                    supplier_id INTEGER,
+                    cost_per_unit DECIMAL(10,2),
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
 
-        // Create device assignments table
-        await client.query(`
-            CREATE TABLE device_assignments (
-                id SERIAL PRIMARY KEY,
-                device_id INTEGER REFERENCES device_inventory(id),
-                user_id INTEGER REFERENCES users(id),
-                assigned_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                return_date TIMESTAMP,
-                status VARCHAR(50),
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+            // Create device assignments table
+            await client.query(`
+                CREATE TABLE device_assignments (
+                    id SERIAL PRIMARY KEY,
+                    device_id INTEGER REFERENCES device_inventory(id),
+                    user_id INTEGER REFERENCES users(id),
+                    assigned_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    return_date TIMESTAMP,
+                    status VARCHAR(50),
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
 
-        // Create maintenance logs table
-        await client.query(`
-            CREATE TABLE maintenance_logs (
-                id SERIAL PRIMARY KEY,
-                device_id INTEGER REFERENCES device_inventory(id),
-                maintenance_type VARCHAR(50),
-                description TEXT,
-                performed_by INTEGER REFERENCES users(id),
-                performed_date TIMESTAMP,
-                cost DECIMAL(10,2),
-                next_maintenance_date TIMESTAMP,
-                status VARCHAR(50),
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+            // Create maintenance logs table
+            await client.query(`
+                CREATE TABLE maintenance_logs (
+                    id SERIAL PRIMARY KEY,
+                    device_id INTEGER REFERENCES device_inventory(id),
+                    maintenance_type VARCHAR(50),
+                    description TEXT,
+                    performed_by INTEGER REFERENCES users(id),
+                    performed_date TIMESTAMP,
+                    cost DECIMAL(10,2),
+                    next_maintenance_date TIMESTAMP,
+                    status VARCHAR(50),
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
 
-        // Create purchase orders table
-        await client.query(`
-            CREATE TABLE purchase_orders (
-                id SERIAL PRIMARY KEY,
-                order_number VARCHAR(50) UNIQUE,
-                supplier_id INTEGER,
-                ordered_by INTEGER REFERENCES users(id),
-                order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                expected_delivery DATE,
-                actual_delivery DATE,
-                status VARCHAR(50),
-                total_amount DECIMAL(10,2),
-                notes TEXT,
-                vendor_name VARCHAR(255),
-                vendor_email VARCHAR(255),
-                contact_person VARCHAR(255),
-                phone_number VARCHAR(255),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+            // Create purchase orders table
+            await client.query(`
+                CREATE TABLE purchase_orders (
+                    id SERIAL PRIMARY KEY,
+                    order_number VARCHAR(50) UNIQUE,
+                    supplier_id INTEGER,
+                    ordered_by INTEGER REFERENCES users(id),
+                    order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expected_delivery DATE,
+                    actual_delivery DATE,
+                    status VARCHAR(50),
+                    total_amount DECIMAL(10,2),
+                    notes TEXT,
+                    vendor_name VARCHAR(255),
+                    vendor_email VARCHAR(255),
+                    contact_person VARCHAR(255),
+                    phone_number VARCHAR(255),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
 
-        // Create order items table
-        await client.query(`
-            CREATE TABLE order_items (
-                id SERIAL PRIMARY KEY,
-                order_id INTEGER REFERENCES purchase_orders(id),
-                item_type VARCHAR(50),
-                item_id INTEGER,
-                quantity INTEGER,
-                unit_price DECIMAL(10,2),
-                total_price DECIMAL(10,2),
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+            // Create order items table
+            await client.query(`
+                CREATE TABLE order_items (
+                    id SERIAL PRIMARY KEY,
+                    order_id INTEGER REFERENCES purchase_orders(id),
+                    item_type VARCHAR(50),
+                    item_id INTEGER,
+                    quantity INTEGER,
+                    unit_price DECIMAL(10,2),
+                    total_price DECIMAL(10,2),
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
 
-        // Create suppliers table
-        await client.query(`
-            CREATE TABLE suppliers (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                contact_person VARCHAR(255),
-                email VARCHAR(255),
-                phone VARCHAR(50),
-                address TEXT,
-                website VARCHAR(255),
-                tax_id VARCHAR(100),
-                payment_terms VARCHAR(255),
-                status VARCHAR(50) DEFAULT 'active',
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+            // Create suppliers table
+            await client.query(`
+                CREATE TABLE suppliers (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    contact_person VARCHAR(255),
+                    email VARCHAR(255),
+                    phone VARCHAR(50),
+                    address TEXT,
+                    website VARCHAR(255),
+                    tax_id VARCHAR(100),
+                    payment_terms VARCHAR(255),
+                    status VARCHAR(50) DEFAULT 'active',
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
 
-        // Create supplier contracts table
-        await client.query(`
-            CREATE TABLE supplier_contracts (
-                id SERIAL PRIMARY KEY,
-                supplier_id INTEGER REFERENCES suppliers(id),
-                contract_number VARCHAR(50),
-                start_date DATE,
-                end_date DATE,
-                contract_type VARCHAR(50),
-                terms TEXT,
-                document_url TEXT,
-                status VARCHAR(50),
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+            // Create supplier contracts table
+            await client.query(`
+                CREATE TABLE supplier_contracts (
+                    id SERIAL PRIMARY KEY,
+                    supplier_id INTEGER REFERENCES suppliers(id),
+                    contract_number VARCHAR(50),
+                    start_date DATE,
+                    end_date DATE,
+                    contract_type VARCHAR(50),
+                    terms TEXT,
+                    document_url TEXT,
+                    status VARCHAR(50),
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
 
-        // Create warranties table
-        await client.query(`
-            CREATE TABLE warranties (
-                id SERIAL PRIMARY KEY,
-                item_type VARCHAR(50),
-                item_id INTEGER,
-                warranty_number VARCHAR(100),
-                provider VARCHAR(100),
-                start_date DATE,
-                end_date DATE,
-                terms TEXT,
-                status VARCHAR(50),
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+            // Create warranties table
+            await client.query(`
+                CREATE TABLE warranties (
+                    id SERIAL PRIMARY KEY,
+                    item_type VARCHAR(50),
+                    item_id INTEGER,
+                    warranty_number VARCHAR(100),
+                    provider VARCHAR(100),
+                    start_date DATE,
+                    end_date DATE,
+                    terms TEXT,
+                    status VARCHAR(50),
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
 
-        // Create activity logs table
-        await client.query(`
-            CREATE TABLE activity_logs (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER REFERENCES users(id),
-                action_type VARCHAR(50),
-                item_type VARCHAR(50),
-                item_id INTEGER,
-                description TEXT,
-                ip_address VARCHAR(45),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+            // Create activity logs table
+            await client.query(`
+                CREATE TABLE activity_logs (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(id),
+                    action_type VARCHAR(50),
+                    item_type VARCHAR(50),
+                    item_id INTEGER,
+                    description TEXT,
+                    ip_address VARCHAR(45),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
 
-        // Create indexes for better performance
-        await client.query(`
-            CREATE INDEX idx_device_hostname ON device_inventory(device_hostname);
-            CREATE INDEX idx_device_serial ON device_inventory(serial_number);
-            CREATE INDEX idx_device_status ON device_inventory(status);
-            CREATE INDEX idx_software_name ON software_licenses(software_name);
-            CREATE INDEX idx_peripheral_serial ON peripherals(serial_number);
-            CREATE INDEX idx_spare_parts_name ON spare_parts(name);
-            CREATE INDEX idx_purchase_order_number ON purchase_orders(order_number);
-            CREATE INDEX idx_supplier_name ON suppliers(name);
-            CREATE INDEX idx_activity_logs_user ON activity_logs(user_id);
-        `);
+            // Create indexes for better performance
+            await client.query(`
+                CREATE INDEX idx_device_hostname ON device_inventory(device_hostname);
+                CREATE INDEX idx_device_serial ON device_inventory(serial_number);
+                CREATE INDEX idx_device_status ON device_inventory(status);
+                CREATE INDEX idx_software_name ON software_licenses(software_name);
+                CREATE INDEX idx_peripheral_serial ON peripherals(serial_number);
+                CREATE INDEX idx_spare_parts_name ON spare_parts(name);
+                CREATE INDEX idx_purchase_order_number ON purchase_orders(order_number);
+                CREATE INDEX idx_supplier_name ON suppliers(name);
+                CREATE INDEX idx_activity_logs_user ON activity_logs(user_id);
+            `);
+        } else {
+            console.log('Tables already exist, skipping schema creation');
+        }
 
         await client.query('COMMIT');
         console.log('Database schema initialized successfully');

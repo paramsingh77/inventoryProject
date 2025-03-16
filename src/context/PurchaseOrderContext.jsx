@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import socket from '../utils/socket';
 import { useNotification } from './NotificationContext';
 import api from '../utils/api-es';
@@ -19,12 +19,14 @@ export const PurchaseOrderProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const { addNotification } = useNotification();
 
-  // Fetch all purchase orders
-  const fetchPurchaseOrders = async () => {
+  // Fetch all purchase orders - wrap in useCallback
+  const fetchPurchaseOrders = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
+      console.log('Fetching purchase orders from:', '/api/purchase-orders');
       const response = await api.get('/api/purchase-orders');
+      console.log('Purchase orders API response:', response.data);
       
       // Format the orders
       const formattedOrders = response.data.map(order => ({
@@ -44,6 +46,7 @@ export const PurchaseOrderProvider = ({ children }) => {
         items: order.items || []
       }));
       
+      console.log('Formatted purchase orders:', formattedOrders);
       setPurchaseOrders(formattedOrders);
     } catch (err) {
       console.error('Error fetching purchase orders:', err);
@@ -52,16 +55,16 @@ export const PurchaseOrderProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [addNotification]);  // add dependency
 
-  // Add new purchase order
-  const addPurchaseOrder = (newPO) => {
+  // Add new purchase order - wrap in useCallback
+  const addPurchaseOrder = useCallback((newPO) => {
     setPurchaseOrders(prev => [newPO, ...prev]);
     addNotification('success', 'Purchase order created successfully');
-  };
+  }, [addNotification]); // add dependency
 
-  // Update purchase order status
-  const updatePurchaseOrderStatus = (poId, newStatus) => {
+  // Update purchase order status - wrap in useCallback
+  const updatePurchaseOrderStatus = useCallback((poId, newStatus) => {
     setPurchaseOrders(prev => prev.map(po => {
       if (po.id === poId || po.poNumber === poId) {
         return { ...po, status: newStatus };
@@ -69,13 +72,13 @@ export const PurchaseOrderProvider = ({ children }) => {
       return po;
     }));
     addNotification('info', `Purchase order ${poId} status updated to ${newStatus}`);
-  };
+  }, [addNotification]); // add dependency
 
-  // Delete purchase order
-  const deletePurchaseOrder = (poId) => {
+  // Delete purchase order - wrap in useCallback
+  const deletePurchaseOrder = useCallback((poId) => {
     setPurchaseOrders(prev => prev.filter(po => po.id !== poId && po.poNumber !== poId));
     addNotification('success', `Purchase order ${poId} deleted successfully`);
-  };
+  }, [addNotification]); // add dependency
 
   // Get filtered purchase orders
   const getFilteredPurchaseOrders = (filter = 'all') => {
@@ -107,7 +110,7 @@ export const PurchaseOrderProvider = ({ children }) => {
       socket.off('new_po');
       socket.off('po_deleted');
     };
-  }, []);
+  }, [fetchPurchaseOrders, updatePurchaseOrderStatus, addPurchaseOrder, deletePurchaseOrder]);
 
   const value = {
     purchaseOrders,
