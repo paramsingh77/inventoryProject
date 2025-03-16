@@ -57,7 +57,7 @@ router.get('/purchase-orders', authMiddleware, async (req, res) => {
 router.get('/purchase-orders/status/:status', authMiddleware, async (req, res) => {
     try {
         const { status } = req.params;
-        
+        console.log('Status:', status);
         const query = `
             SELECT po.*, 
                    u.username as ordered_by_name,
@@ -91,6 +91,7 @@ router.get('/purchase-orders/status/:status', authMiddleware, async (req, res) =
 
 // Get pending purchase orders (admin only)
 router.get('/purchase-orders/pending', authMiddleware, adminMiddleware, async (req, res) => {
+    console.log('Fetching pending purchase ordersssssss');
     try {
         const query = `
             SELECT po.*, 
@@ -164,6 +165,7 @@ router.get('/purchase-orders/:id', authMiddleware, async (req, res) => {
 
 // Create a new purchase order
 router.post('/purchase-orders', authMiddleware, async (req, res) => {
+    console.log('Received PO creationnnnn request:', JSON.stringify(req.body, null, 2));
     const client = await pool.connect();
     try {
         console.log('Received PO creation request:', JSON.stringify(req.body, null, 2));
@@ -207,16 +209,16 @@ router.post('/purchase-orders', authMiddleware, async (req, res) => {
         `;
 
         const orderValues = [
-            req.body.order_number || req.body.poNumber,
+            req.body.order_number|| req.body.poNumber,
             null,  // supplier_id is nullable
             req.body.expected_delivery || req.body.deliveryDate || null,
             'pending',
             parseFloat(req.body.total_amount || req.body.totalAmount || 0),
             req.body.notes || '',
-            req.body.vendor?.name || '',
-            req.body.vendor?.email || '',
-            req.body.vendor?.contactPerson || '',
-            req.body.vendor?.phone || ''
+            req.body.vendor_name || '',
+            req.body.vendor_email || '',
+            req.body.contact_person || '',
+            req.body.phone_number || ''
         ];
 
         console.log('Executing order insert with values:', orderValues);
@@ -285,6 +287,23 @@ router.post('/purchase-orders', authMiddleware, async (req, res) => {
             requestDate: new Date().toISOString(),
             total: purchaseOrder.total_amount,
             items: req.body.items || []
+        });
+        
+        // Also emit a 'new_po' event for real-time updates in the PO list
+        socketIO.getIO().emit('new_po', {
+            id: purchaseOrder.id,
+            poNumber: purchaseOrder.order_number,
+            supplier: req.body.vendor_name || req.body.vendor?.name || 'Unknown Vendor',
+            vendor: {
+                name: req.body.vendor_name || req.body.vendor?.name || 'Unknown Vendor',
+                email: req.body.vendor_email || req.body.vendor?.email || ''
+            },
+            date: new Date().toISOString().split('T')[0],
+            createdAt: new Date().toISOString(),
+            total: parseFloat(purchaseOrder.total_amount || 0),
+            totalAmount: parseFloat(purchaseOrder.total_amount || 0),
+            status: 'pending',
+            hasInvoice: false
         });
 
         res.status(201).json({

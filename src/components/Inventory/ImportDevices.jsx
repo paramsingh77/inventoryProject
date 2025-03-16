@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Form, Button, Alert, Spinner, Modal } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFileImport } from '@fortawesome/free-solid-svg-icons';
-import axios from 'axios';
+import axios from 'axios'; 
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ImportDevices = ({ onImportSuccess }) => {

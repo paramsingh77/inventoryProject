@@ -1,19 +1,39 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Table, Badge, Button } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEye, faEdit, faTrash } from '@fortawesome/free-solid-svg-icons';
 import { usePurchaseOrders } from '../../../context/PurchaseOrderContext';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const POList = ({ filter = 'all' }) => {
   const { 
     getFilteredPurchaseOrders, 
     loading, 
     error, 
-    deletePurchaseOrder 
+    deletePurchaseOrder,
+    purchaseOrders
   } = usePurchaseOrders();
 
-  const purchaseOrders = getFilteredPurchaseOrders(filter);
+  // Track newly added POs to animate them specially
+  const [newlyAddedPOs, setNewlyAddedPOs] = useState([]);
+  const filteredPOs = getFilteredPurchaseOrders(filter);
+
+  // When purchaseOrders changes, detect newly added ones
+  useEffect(() => {
+    // This will run whenever purchaseOrders changes
+    const currentIds = new Set(purchaseOrders.map(po => po.id));
+    const newIds = [...currentIds].filter(id => !newlyAddedPOs.includes(id));
+    
+    if (newIds.length > 0) {
+      // Add new IDs to the newlyAddedPOs list
+      setNewlyAddedPOs(prev => [...prev, ...newIds]);
+      
+      // Remove the "new" status after 5 seconds
+      setTimeout(() => {
+        setNewlyAddedPOs(prev => prev.filter(id => !newIds.includes(id)));
+      }, 5000);
+    }
+  }, [purchaseOrders]);
 
   const getStatusBadge = (status) => {
     const colors = {
@@ -67,44 +87,59 @@ const POList = ({ filter = 'all' }) => {
           </tr>
         </thead>
         <tbody>
-          {purchaseOrders.map((order) => (
-            <motion.tr
-              key={order.id || order.poNumber}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <td>{order.poNumber}</td>
-              <td>{order.vendor?.name || 'N/A'}</td>
-              <td>{order.createdAt ? new Date(order.createdAt).toLocaleDateString() : 'N/A'}</td>
-              <td>${(order.totalAmount || 0).toFixed(2)}</td>
-              <td>{getStatusBadge(order.status)}</td>
-              <td>
-                <div className="d-flex gap-2">
-                  <Button variant="light" size="sm" title="View Details">
-                    <FontAwesomeIcon icon={faEye} />
-                  </Button>
-                  {order.status === 'pending' && (
-                    <Button variant="light" size="sm" title="Edit">
-                      <FontAwesomeIcon icon={faEdit} />
-                    </Button>
-                  )}
-                  {order.status === 'pending' && (
-                    <Button 
-                      variant="light" 
-                      size="sm" 
-                      className="text-danger" 
-                      title="Delete"
-                      onClick={() => deletePurchaseOrder(order.id || order.poNumber)}
-                    >
-                      <FontAwesomeIcon icon={faTrash} />
-                    </Button>
-                  )}
-                </div>
-              </td>
-            </motion.tr>
-          ))}
-          {purchaseOrders.length === 0 && (
+          <AnimatePresence>
+            {filteredPOs.map((order) => {
+              const isNew = newlyAddedPOs.includes(order.id);
+              
+              return (
+                <motion.tr
+                  key={order.id || order.poNumber}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ 
+                    opacity: 1, 
+                    y: 0,
+                    backgroundColor: isNew ? ['#fff', '#e6f7ff', '#fff'] : '#fff'
+                  }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ 
+                    duration: isNew ? 0.5 : 0.3,
+                    backgroundColor: { duration: 2, repeat: 0 }
+                  }}
+                  className={isNew ? 'new-po-highlight' : ''}
+                >
+                  <td>{order.poNumber}</td>
+                  <td>{order.vendor?.name || 'N/A'}</td>
+                  <td>{order.createdAt ? new Date(order.createdAt).toLocaleDateString() : 'N/A'}</td>
+                  <td>${(order.totalAmount || 0).toFixed(2)}</td>
+                  <td>{getStatusBadge(order.status)}</td>
+                  <td>
+                    <div className="d-flex gap-2">
+                      <Button variant="light" size="sm" title="View Details">
+                        <FontAwesomeIcon icon={faEye} />
+                      </Button>
+                      {order.status === 'pending' && (
+                        <Button variant="light" size="sm" title="Edit">
+                          <FontAwesomeIcon icon={faEdit} />
+                        </Button>
+                      )}
+                      {order.status === 'pending' && (
+                        <Button 
+                          variant="light" 
+                          size="sm" 
+                          className="text-danger" 
+                          title="Delete"
+                          onClick={() => deletePurchaseOrder(order.id || order.poNumber)}
+                        >
+                          <FontAwesomeIcon icon={faTrash} />
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </motion.tr>
+              )
+            })}
+          </AnimatePresence>
+          {filteredPOs.length === 0 && (
             <tr>
               <td colSpan="6" className="text-center py-4 text-muted">
                 No purchase orders found
@@ -113,6 +148,19 @@ const POList = ({ filter = 'all' }) => {
           )}
         </tbody>
       </Table>
+      
+      {/* Add some CSS for the highlight effect */}
+      <style jsx>{`
+        .new-po-highlight {
+          animation: pulse 2s;
+        }
+        
+        @keyframes pulse {
+          0% { background-color: #ffffff; }
+          30% { background-color: #e6f7ff; }
+          100% { background-color: #ffffff; }
+        }
+      `}</style>
     </motion.div>
   );
 };

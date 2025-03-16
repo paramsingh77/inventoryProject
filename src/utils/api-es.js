@@ -1,5 +1,5 @@
 /**
- * API utility for making HTTP requests
+ * ES Module API utility for making HTTP requests
  * This module provides a configured axios instance
  */
 
@@ -28,33 +28,16 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     
-    console.log('API Request:', config.method, config.url);
     return config;
   },
-  (error) => {
-    console.error('API Request Error:', error);
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 // Response interceptor for error handling
 api.interceptors.response.use(
-  (response) => {
-    console.log('API Response:', response.status, response.config.url);
-    return response;
-  },
-  (error) => {
-    console.error('API Response Error:', error.response?.status || 'No Status', error.config?.url);
-    return Promise.reject(error);
-  }
+  (response) => response,
+  (error) => Promise.reject(error)
 );
 
-// Export both as default and named export for maximum compatibility
-export default api;
-export { api };
-
-// Remove CommonJS compatibility
-// if (typeof module !== 'undefined') {
-//   module.exports = api;
-//   module.exports.default = api;
-// } 
+// Export the configured instance
+export default api; 

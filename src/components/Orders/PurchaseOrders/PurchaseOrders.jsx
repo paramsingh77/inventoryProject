@@ -138,6 +138,7 @@ const PurchaseOrders = () => {
   useEffect(() => {
     // Listen for new POs
     const handleNewPO = (event) => {
+      console.log('New PO event received:', event);
       if (event.detail?.type === 'NEW_PO') {
         const newPO = {
           ...event.detail.po,

@@ -147,7 +147,7 @@ const detectVendor = (device_model) => {
         'ASUS': /asus/i,
         'Samsung': /samsung/i,
         'LG': /\b(lg|life'?s good)\b/i
-    };
+    }; 
 
     for (const [vendor, pattern] of Object.entries(vendorPatterns)) {
         if (pattern.test(device_model)) {

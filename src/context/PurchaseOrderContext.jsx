@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
 import socket from '../utils/socket';
 import { useNotification } from './NotificationContext';
+import api from '../utils/api-es';
 
 const PurchaseOrderContext = createContext();
 
@@ -24,7 +24,7 @@ export const PurchaseOrderProvider = ({ children }) => {
     try {
       setLoading(true);
       setError(null);
-      const response = await axios.get('/api/purchase-orders');
+      const response = await api.get('/api/purchase-orders');
       
       // Format the orders
       const formattedOrders = response.data.map(order => ({

@@ -114,6 +114,7 @@ const RequiredLabel = ({ children }) => (
 );
 
 const CreatePO = ({ show, onHide, onSuccess }) => {
+  console.log('************* CreatePO component loaded *************');
   const { addNotification } = useNotification();
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -226,7 +227,7 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
         
         // Fetch devices at this site
         try {
-          const response = await axios.get(`/api/devices/site/${siteName}`);
+          const response = await api.get(`/devices/site/${siteName}`);
           if (response.data && Array.isArray(response.data)) {
             setSiteDevices(response.data);
             
@@ -422,6 +423,7 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
   // Add validation function before it's used
   const validatePurchaseOrder = () => {
     // Create a working copy of the form data
+    console.log("formDatassssssssss",formData);
     const workingFormData = { ...formData };
     
     // Ensure vendor object exists
@@ -549,10 +551,11 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
         items: formData.items || []
       };
       
+      console.log('Saving draft with data:', draftData);
+      
       // Save to the database via API
-      console.log('Sending POST request to /api/purchase-orders with status: draft');
-      const response = await axios.post('/api/purchase-orders', draftData);
-      console.log('Draft saved successfully:', response.data);
+      console.log('Sending POST request to /purchase-orders with status: draft');
+      const response = await api.post('/purchase-orders', draftData);
       
       // Show success notification
       addNotification('success', 'Purchase Order saved as draft');
@@ -570,65 +573,117 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
       }
     } catch (error) {
       console.error('Error in handleSaveDraft:', error);
-      addNotification('error', `Failed to save draft: ${error.message}`);
+      addNotification('error', 'Failed to save draft');
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleSendForApproval = async () => {
-    console.log("form data", formData);
+    // DEBUGGING: Show an alert so we know it's being called
+    window.alert("handleSendForApproval function started");
+    
+    // ************ DEBUG LOGS START ************
+    console.log('==================================================');
+    console.log('DEBUGGING: handleSendForApproval FUNCTION CALLED');
+    console.log('==================================================');
+    console.log("Form data for purchase order:", formData);
+    // ************ DEBUG LOGS END ************
+    
     try {
         setSubmitting(true);
         console.log("Starting handleSendForApproval function...");
         
-        // Create a working copy of the form data to ensure we have all required fields
-        const updatedFormData = { ...formData };
+        // *** FIX: Create a working copy of the form data to ensure we have all required fields ***
+        const updatedFormData = JSON.parse(JSON.stringify(formData)); // Deep copy to avoid reference issues
+        console.log("Original form data:", updatedFormData);
         
         // Ensure vendor object exists
         if (!updatedFormData.vendor) {
             updatedFormData.vendor = {};
+            console.log("Created empty vendor object");
         }
         
-        // Ensure vendor has a name
+        // *** CRITICAL FIX: Check if there's a supplier field that needs to be parsed ***
+        if (updatedFormData.supplier && typeof updatedFormData.supplier === 'string' && !updatedFormData.vendor.name) {
+            // Extract vendor name from supplier string (format: "vendor-dell")
+            const vendorMatch = updatedFormData.supplier.match(/vendor-(.+)/);
+            if (vendorMatch && vendorMatch[1]) {
+                const vendorName = vendorMatch[1].replace(/-/g, ' ');
+                updatedFormData.vendor.name = vendorName.charAt(0).toUpperCase() + vendorName.slice(1);
+                console.log(`Extracted vendor name "${updatedFormData.vendor.name}" from supplier "${updatedFormData.supplier}"`);
+            }
+        }
+        
+        // Check vendorName and vendor.name
         if (!updatedFormData.vendor.name && updatedFormData.vendorName) {
             updatedFormData.vendor.name = updatedFormData.vendorName;
+            console.log(`Using vendorName field: ${updatedFormData.vendorName}`);
         }
         
-        // Ensure vendor has an email (critical for validation)
+        // *** VERIFY VENDOR INFO EXISTS ***
+        console.log("Vendor info before processing:", {
+            "vendor.name": updatedFormData.vendor?.name,
+            "vendor.email": updatedFormData.vendor?.email,
+            "vendor.phone": updatedFormData.vendor?.phone,
+            "vendor.contactPerson": updatedFormData.vendor?.contactPerson,
+            "direct vendorName": updatedFormData.vendorName, 
+            "direct vendorEmail": updatedFormData.vendorEmail,
+            "supplier": updatedFormData.supplier
+        });
+        
+        // *** CRITICAL FIX: Ensure vendor has an email ***
         if (!updatedFormData.vendor.email) {
             // Try to use direct vendorEmail field first
             if (updatedFormData.vendorEmail) {
                 updatedFormData.vendor.email = updatedFormData.vendorEmail;
+                console.log(`Using direct vendorEmail: ${updatedFormData.vendorEmail}`);
             } else if (updatedFormData.vendor.name) {
                 // Generate a default email based on vendor name
                 updatedFormData.vendor.email = `sales@${updatedFormData.vendor.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
                 updatedFormData.vendorEmail = updatedFormData.vendor.email;
-                console.log("Generated default vendor email:", updatedFormData.vendor.email);
+                console.log(`Generated vendor email: ${updatedFormData.vendor.email}`);
             }
         }
         
-        // Ensure vendor has a phone number
+        // *** CRITICAL FIX: Ensure vendor has a phone number ***
         if (!updatedFormData.vendor.phone) {
             // Try to use direct vendorPhone field first
             if (updatedFormData.vendorPhone) {
                 updatedFormData.vendor.phone = updatedFormData.vendorPhone;
+                console.log(`Using direct vendorPhone: ${updatedFormData.vendorPhone}`);
             } else {
                 // Set a default phone number
                 updatedFormData.vendor.phone = '555-0000';
                 updatedFormData.vendorPhone = updatedFormData.vendor.phone;
-                console.log("Set default vendor phone:", updatedFormData.vendor.phone);
+                console.log(`Using default phone: ${updatedFormData.vendor.phone}`);
             }
         }
         
+        // *** CRITICAL FIX: Ensure contact person is set ***
+        if (!updatedFormData.vendor.contactPerson) {
+            if (updatedFormData.vendor.email) {
+                // Use email prefix as contact person if email exists
+                const emailPrefix = updatedFormData.vendor.email.split('@')[0];
+                updatedFormData.vendor.contactPerson = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
+                console.log(`Generated contact person from email: ${updatedFormData.vendor.contactPerson}`);
+            } else if (updatedFormData.vendor.name) {
+                // Use vendor name as contact person
+                updatedFormData.vendor.contactPerson = `${updatedFormData.vendor.name} Representative`;
+                console.log(`Generated contact person from name: ${updatedFormData.vendor.contactPerson}`);
+            }
+        }
+        
+        // *** FINAL VERIFICATION: Log the vendor data after all fixes ***
+        console.log("Final vendor info:", {
+            name: updatedFormData.vendor.name,
+            email: updatedFormData.vendor.email,
+            phone: updatedFormData.vendor.phone,
+            contactPerson: updatedFormData.vendor.contactPerson
+        });
+        
         // Update the form data with our fixed version
         setFormData(updatedFormData);
-        
-        console.log("Sending PO for approval with form data:", {
-            vendor: updatedFormData.vendor,
-            items: updatedFormData.items,
-            totalAmount: updatedFormData.totalAmount
-        });
         
         // Run validations
         if (!validatePurchaseOrder()) {
@@ -638,55 +693,124 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
         }
         
         // Calculate totals before submission
+        // Call calculateTotal() but don't rely on it to update the state in time
         calculateTotal();
         
-        // Get user information from localStorage
-        const username = localStorage.getItem('username') || 'Unknown';
-        const userRole = localStorage.getItem('userRole') || 'User';
-        const department = formData.department || 'Not specified';
+        // Properly format items to match database schema requirements
+        const processedItems = [];
+        let manualTotalAmount = 0;
         
-        // Prepare the API payload with properly formatted data
-        const purchaseOrderData = {
-            order_number: updatedFormData.poNumber,
-            supplier_id: null, // We're not using supplier_id at the moment
-            expected_delivery: updatedFormData.deliveryDate,
-            status: 'pending',
-            total_amount: parseFloat(updatedFormData.totalAmount || 0),
-            notes: updatedFormData.notes || '',
-            vendor_name: updatedFormData.vendor.name,
-            vendor_email: updatedFormData.vendor.email || updatedFormData.vendorEmail,
-            contact_person: updatedFormData.vendor.contactPerson || '',
-            phone_number: updatedFormData.vendor.phone || updatedFormData.vendorPhone || '',
-            items: updatedFormData.items.map(item => ({
+        console.log("Processing items for database insertion:", updatedFormData.items);
+        
+        updatedFormData.items.forEach((item, index) => {
+            // Extract unit price and quantity, ensuring they're numbers
+            const unitPrice = parseFloat(item.price || 0);
+            const quantity = parseInt(item.quantity || 1);
+            const totalPrice = unitPrice * quantity;
+            
+            // Add to running total
+            manualTotalAmount += totalPrice;
+            
+            // Log item details for debugging
+            console.log(`Item ${index + 1}:`, {
+                name: item.name || 'Unknown',
+                unitPrice,
+                quantity,
+                totalPrice,
+                itemId: item.id || null
+            });
+            
+            processedItems.push({
                 item_type: item.type || 'product',
                 item_id: item.id || null,
-                quantity: parseInt(item.quantity) || 1,
-                unit_price: parseFloat(item.price) || 0,
-                total_price: parseFloat((item.quantity || 1) * (item.price || 0)),
-                description: item.description || '',
-                notes: item.notes || ''
-            }))
+                quantity: quantity,
+                unit_price: unitPrice,
+                total_price: totalPrice,
+                notes: item.description || item.name || ''
+            });
+        });
+        
+        console.log("Manually calculated total amount:", manualTotalAmount.toFixed(2));
+        
+        // Get user information from localStorage
+        const username = localStorage.getItem('username') || 'admin';
+        
+        // Fix supplier_id format - if it's not a valid numeric ID, set to null
+        let supplierId = null;
+        if (updatedFormData.vendor && updatedFormData.vendor.id) {
+            if (!isNaN(parseInt(updatedFormData.vendor.id))) {
+                // If it's a numeric ID, use it
+                supplierId = parseInt(updatedFormData.vendor.id);
+            } else if (typeof updatedFormData.vendor.id === 'string' && 
+                       updatedFormData.vendor.id.startsWith('vendor-')) {
+                // It's a vendor string ID - set to null for the database
+                supplierId = null;
+            }
+        }
+        
+        console.log("Formatted supplier_id for database:", supplierId);
+        
+        // *** CRITICAL FIX: Prepare the API payload with correct vendor fields ***
+        const purchaseOrderData = {
+            order_number: updatedFormData.poNumber,
+            supplier_id: supplierId,
+            ordered_by: username,
+            order_date: new Date().toISOString(),
+            expected_delivery: updatedFormData.deliveryDate,
+            status: 'pending',
+            total_amount: manualTotalAmount,
+            notes: updatedFormData.notes || '',
+            // Make sure to explicitly include these fields
+            vendor_name: updatedFormData.vendor.name || '',
+            vendor_email: updatedFormData.vendor.email || '',
+            contact_person: updatedFormData.vendor.contactPerson || '',
+            phone_number: updatedFormData.vendor.phone || '',
+            items: processedItems
         };
         
-        console.log('Sending PO data to API:', purchaseOrderData);
+        console.log('FINAL DATA BEING SENT TO API:', purchaseOrderData);
         
         // Use our API utility with proper error handling
-        const response = await api.post('/api/purchase-orders', purchaseOrderData);
-        
-        console.log('Purchase order created successfully:', response.data);
-        
-        // Show success notification
-        addNotification('success', 'Purchase Order sent for approval');
-        
-        // Close modal and refresh orders list
-        onHide();
-        if (onSuccess) {
-            onSuccess({
-                ...purchaseOrderData,
-                id: response.data.purchaseOrder?.id,
-                poNumber: purchaseOrderData.order_number,
-                status: 'pending'
-            });
+        try {
+            const response = await api.post('/purchase-orders', purchaseOrderData);
+            
+            console.log('Purchase order created successfully:', response.data);
+            
+            // Show success notification
+            addNotification('success', 'Purchase Order sent for approval');
+            
+            // Log message about real-time updates
+            console.log('A real-time update should be triggered via Socket.IO');
+            
+            // Close modal and refresh orders list
+            onHide();
+            if (onSuccess) {
+                onSuccess({
+                    ...purchaseOrderData,
+                    id: response.data.purchaseOrder?.id,
+                    poNumber: purchaseOrderData.order_number,
+                    status: 'pending'
+                });
+            }
+        } catch (error) {
+            console.error('Error sending PO for approval:', error);
+            
+            // Provide more detailed error messaging
+            const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message;
+            addNotification('error', `Failed to send for approval: ${errorMessage}`);
+            
+            // Log detailed error information
+            if (error.response) {
+                console.error('API Error Details:', {
+                    status: error.response.status,
+                    data: error.response.data,
+                    headers: error.response.headers
+                });
+            } else if (error.request) {
+                console.error('API Request Error (No Response):', error.request);
+            } else {
+                console.error('Request Setup Error:', error.message);
+            }
         }
     } catch (error) {
         console.error('Error sending PO for approval:', error);
@@ -710,7 +834,7 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
     } finally {
         setSubmitting(false);
     }
-  };
+};
 
   // Item Management Functions
   const calculateTotals = (items) => {
@@ -791,7 +915,7 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
             const encodedVendorName = encodeURIComponent(vendorName);
             console.log(`Fetching products for vendor: ${encodedVendorName}`);
             
-            const response = await axios.get(`/api/devices/vendor/${encodedVendorName}`);
+            const response = await api.get(`/devices/vendor/${encodedVendorName}`);
             
             if (response.data && Array.isArray(response.data)) {
               console.log(`Found ${response.data.length} products for vendor ${vendorName}`);
