@@ -1,0 +1,14 @@
+Status,Site,Hostname,Type,Last User,OS,Serial Number,Description,Last Seen,MAC Address(es),Device CPU
+Offline,Wiliams Clinic,CMCDT1450,Desktop,CMC\jovanna.hernandez,Microsoft Windows 10 Pro 10.0.19045,MXL1500DTP,WHCDT1450,2025-03-26T23:39:06Z,2C:41:38:AE:13:08,Intel(R) Core(TM) i5-2400 CPU @ 3.10GHz
+Online,Wiliams Clinic,WHC2018,Desktop,CMC\tuan.doan,Microsoft Windows 10 Pro 10.0.19045,529DCS2,WHC2018,2025-03-26T23:59:54Z,54:BF:64:81:11:E9,Intel(R) Core(TM) i7-7700 CPU @ 3.60GHz
+Online,Wiliams Clinic,WHCDT07,Desktop,CMC\sulaiman.zurmati,Microsoft Windows 10 Pro 10.0.19045,MXL3170GRT,CMCD07,2025-03-26T23:59:54Z,6C:3B:E5:2E:15:2A,Intel(R) Core(TM) i5-3470 CPU @ 3.20GHz
+Online,Wiliams Clinic,WHCDT1106,Desktop,CMC\marleen.villafana,Microsoft Windows 10 Pro 10.0.19045,9JK5FF3,DESKTOP-16OMSE8,2025-03-26T23:59:54Z,"B0:4F:13:02:14:14, 53:4E:57:00:00:00",Intel(R) Core(TM) i5-10505 CPU @ 3.20GHz
+Online,Wiliams Clinic,WHCDT1135,Desktop,CMC\cathy.delay,Microsoft Windows 10 Pro 10.0.19045,6FP9RD2,CMCD1135,2025-03-26T23:59:54Z,"F4:8E:38:AB:F6:31, 53:4E:57:00:00:00, F8:E4:3B:9F:EF:CB",Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz
+Offline,Wiliams Clinic,WHCDT1415,Desktop,CMC\adriana.floriano,Microsoft Windows 10 Pro 10.0.19045,DH9VMH3,CMCDT1415,2025-03-26T23:38:43Z,"30:D0:42:EC:9B:72, 70:CD:0D:DF:C9:60, 70:CD:0D:DF:C9:64, 53:4E:57:00:00:00",Intel(R) Core(TM) i5-10500T CPU @ 2.30GHz
+Online,Wiliams Clinic,WHCDT1455,Desktop,CMC\lovepreet.kaur1,Microsoft Windows 10 Pro 10.0.19045,1RYCKS1,CMCDT1455,2025-03-26T23:59:54Z,D4:BE:D9:90:11:0E,Intel(R) Core(TM) i7-2600 CPU @ 3.40GHz
+Online,Wiliams Clinic,WHCDT1485,Desktop,CMC\michelle.moore,Microsoft Windows 10 Pro 10.0.19045,91LMV52,CMCDT1485,2025-03-26T23:59:54Z,64:00:6A:57:F3:EB,Intel(R) Core(TM) i7-4790 CPU @ 3.60GHz
+Online,Wiliams Clinic,WHCDT2002,Desktop,CMC\jovanna.hernandez,Microsoft Windows 10 Pro 10.0.19045,5KVKNK3,DESKTOP-4NFMP4H,2025-03-26T23:59:54Z,"B0:4F:13:0B:20:01, 10:51:07:29:4E:F6, 10:51:07:29:4E:FA, 53:4E:57:00:00:00",Intel(R) Core(TM) i5-10505 CPU @ 3.20GHz
+Online,Wiliams Clinic,WHCDT2003,Desktop,CMC\doreen.kumar,Microsoft Windows 11 Pro 10.0.26100,GHVKNK3,WHCDT2003,2025-03-26T23:59:54Z,"B0:4F:13:0B:22:05, 10:51:07:28:2A:FD, 10:51:07:28:2B:01",Intel(R) Core(TM) i5-10505 CPU @ 3.20GHz
+Offline,Wiliams Clinic,WHCDT2006,Desktop,CMC\adriana.floriano,Microsoft Windows 10 Pro 10.0.19045,DHBWMH3,DESKTOP-Q017LNF,2025-03-26T23:51:34Z,"70:CD:0D:DF:CA:0A, 30:D0:42:EC:94:BC, 70:CD:0D:DF:CA:0E",Intel(R) Core(TM) i5-10500T CPU @ 2.30GHz
+Offline,Wiliams Clinic,WHCDT2007,Desktop,CMC\cathy.delay,Microsoft Windows 10 Pro 10.0.19045,3HZ9MH3,CMCDT2007,2025-03-26T21:29:00Z,"30:D0:42:F1:CA:B3, 5C:E4:2A:F0:38:09, 5C:E4:2A:F0:38:0D",Intel(R) Core(TM) i5-10500T CPU @ 2.30GHz
+Online,Wiliams Clinic,WHCDT2019,Desktop,CMC\michelle.moore,Microsoft Windows 10 Pro 10.0.19045,HMWLMR2,WHCDT2019,2025-03-26T23:59:54Z,54:BF:64:79:6A:63,Intel(R) Core(TM) i7-7700 CPU @ 3.60GHz

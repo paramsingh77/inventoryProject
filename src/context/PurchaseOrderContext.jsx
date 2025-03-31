@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import socket from '../utils/socket';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+// Remove socket import
+// import socket from '../utils/socket';
 import { useNotification } from './NotificationContext';
 import api from '../utils/api-es';
 
@@ -13,20 +14,53 @@ export const usePurchaseOrders = () => {
   return context;
 };
 
-export const PurchaseOrderProvider = ({ children }) => {
+export const PurchaseOrderProvider = ({ children, siteName }) => {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [currentSite, setCurrentSite] = useState(siteName);
   const { addNotification } = useNotification();
 
-  // Fetch all purchase orders - wrap in useCallback
-  const fetchPurchaseOrders = useCallback(async () => {
+  // Update site when prop changes
+  useEffect(() => {
+    if (siteName) {
+      setCurrentSite(siteName);
+    }
+  }, [siteName]);
+
+  // Fetch purchase orders for a specific site
+  const fetchPurchaseOrders = async (site = currentSite) => {
+    if (!site) {
+      console.warn('No site provided to fetchPurchaseOrders');
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching purchase orders from:', '/api/purchase-orders');
-      const response = await api.get('/api/purchase-orders');
-      console.log('Purchase orders API response:', response.data);
+      
+      // Properly encode the site name
+      const encodedSiteName = encodeURIComponent(site);
+      console.log(`Fetching purchase orders for site: ${site} (encoded: ${encodedSiteName})...`);
+      
+      // Get the auth token
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('No authentication token available');
+        setError('Authentication required');
+        addNotification('error', 'Please log in to view purchase orders');
+        return;
+      }
+      
+      // Use site-specific endpoint with encoded site name and auth token
+      const response = await api.get(`/api/sites/${encodedSiteName}/orders`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      console.log('Site purchase orders response:', response);
       
       // Format the orders
       const formattedOrders = response.data.map(order => ({
@@ -43,80 +77,128 @@ export const PurchaseOrderProvider = ({ children }) => {
         totalAmount: parseFloat(order.total_amount || 0),
         status: order.status || 'pending',
         hasInvoice: order.has_invoice || false,
-        items: order.items || []
+        items: order.items || [],
+        site_id: order.site_id,
+        siteName: site
       }));
       
-      console.log('Formatted purchase orders:', formattedOrders);
       setPurchaseOrders(formattedOrders);
     } catch (err) {
-      console.error('Error fetching purchase orders:', err);
-      setError('Failed to load purchase orders');
-      addNotification('error', 'Failed to load purchase orders');
+      console.error(`Error fetching purchase orders for site ${site}:`, err);
+      setError(`Failed to load purchase orders for ${site}`);
+      addNotification('error', `Failed to load purchase orders for ${site}`);
     } finally {
       setLoading(false);
     }
-  }, [addNotification]);  // add dependency
+  };
 
-  // Add new purchase order - wrap in useCallback
-  const addPurchaseOrder = useCallback((newPO) => {
-    setPurchaseOrders(prev => [newPO, ...prev]);
-    addNotification('success', 'Purchase order created successfully');
-  }, [addNotification]); // add dependency
+  // Add new purchase order with site_id
+  const addPurchaseOrder = async (newPO) => {
+    if (!currentSite) {
+      addNotification('error', 'No site selected for creating purchase order');
+      return;
+    }
+    
+    try {
+      // Add site information to the PO data
+      const poWithSite = {
+        ...newPO,
+        site: currentSite
+      };
+      
+      // Use site-specific endpoint
+      const response = await api.post(`/api/sites/${currentSite}/orders`, poWithSite);
+      
+      // Add to local state
+      setPurchaseOrders(prev => [response.data, ...prev]);
+      addNotification('success', 'Purchase order created successfully');
+      return response.data;
+    } catch (err) {
+      console.error('Error creating purchase order:', err);
+      addNotification('error', `Failed to create purchase order: ${err.message}`);
+      throw err;
+    }
+  };
 
-  // Update purchase order status - wrap in useCallback
-  const updatePurchaseOrderStatus = useCallback((poId, newStatus) => {
-    setPurchaseOrders(prev => prev.map(po => {
-      if (po.id === poId || po.poNumber === poId) {
-        return { ...po, status: newStatus };
-      }
-      return po;
-    }));
-    addNotification('info', `Purchase order ${poId} status updated to ${newStatus}`);
-  }, [addNotification]); // add dependency
+  // Update purchase order status
+  const updatePurchaseOrderStatus = async (poId, newStatus) => {
+    if (!currentSite) {
+      addNotification('error', 'No site selected for updating purchase order');
+      return;
+    }
+    
+    try {
+      await api.patch(`/api/sites/${currentSite}/orders/${poId}/status`, { status: newStatus });
+      
+      // Update local state
+      setPurchaseOrders(prev => prev.map(po => {
+        if (po.id === poId || po.poNumber === poId) {
+          return { ...po, status: newStatus };
+        }
+        return po;
+      }));
+      
+      addNotification('info', `Purchase order ${poId} status updated to ${newStatus}`);
+    } catch (err) {
+      console.error('Error updating purchase order status:', err);
+      addNotification('error', 'Failed to update purchase order status');
+      throw err;
+    }
+  };
 
-  // Delete purchase order - wrap in useCallback
-  const deletePurchaseOrder = useCallback((poId) => {
-    setPurchaseOrders(prev => prev.filter(po => po.id !== poId && po.poNumber !== poId));
-    addNotification('success', `Purchase order ${poId} deleted successfully`);
-  }, [addNotification]); // add dependency
+  // Delete purchase order
+  const deletePurchaseOrder = async (poId) => {
+    if (!currentSite) {
+      addNotification('error', 'No site selected for deleting purchase order');
+      return;
+    }
+    
+    try {
+      await api.delete(`/api/sites/${currentSite}/orders/${poId}`);
+      
+      // Update local state
+      setPurchaseOrders(prev => prev.filter(po => po.id !== poId && po.poNumber !== poId));
+      addNotification('success', `Purchase order ${poId} deleted successfully`);
+    } catch (err) {
+      console.error('Error deleting purchase order:', err);
+      addNotification('error', 'Failed to delete purchase order');
+      throw err;
+    }
+  };
 
   // Get filtered purchase orders
   const getFilteredPurchaseOrders = (filter = 'all') => {
     if (filter === 'all') return purchaseOrders;
-    return purchaseOrders.filter(po => po.status === filter);
+    
+    // Handle different status formats (lowercase, underscores, etc.)
+    const normalizedFilter = filter.toLowerCase().replace(/_/g, ' ');
+    
+    return purchaseOrders.filter(po => {
+      // Normalize the status for comparison
+      const poStatus = (po.status || '').toLowerCase().replace(/_/g, ' ');
+      return poStatus === normalizedFilter;
+    });
   };
 
-  // Setup socket listeners for real-time updates
+  // Manual refresh function
+  const refreshPurchaseOrders = () => {
+    fetchPurchaseOrders(currentSite);
+  };
+
+  // Fetch orders when site changes or refresh is triggered
   useEffect(() => {
-    // Initial fetch
-    fetchPurchaseOrders();
-
-    // Socket event listeners
-    socket.on('po_status_update', (data) => {
-      updatePurchaseOrderStatus(data.poId, data.status);
-    });
-
-    socket.on('new_po', (data) => {
-      addPurchaseOrder(data);
-    });
-
-    socket.on('po_deleted', (data) => {
-      deletePurchaseOrder(data.poId);
-    });
-
-    // Cleanup
-    return () => {
-      socket.off('po_status_update');
-      socket.off('new_po');
-      socket.off('po_deleted');
-    };
-  }, [fetchPurchaseOrders, updatePurchaseOrderStatus, addPurchaseOrder, deletePurchaseOrder]);
+    if (currentSite) {
+      fetchPurchaseOrders(currentSite);
+    }
+  }, [currentSite, refreshTrigger]);
 
   const value = {
     purchaseOrders,
     loading,
     error,
+    currentSite,
     fetchPurchaseOrders,
+    refreshPurchaseOrders,
     addPurchaseOrder,
     updatePurchaseOrderStatus,
     deletePurchaseOrder,

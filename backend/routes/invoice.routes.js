@@ -4,6 +4,8 @@ const emailController = require('../controllers/email.controller');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { pool } = require('../database/schema');
+const authMiddleware = require('../middleware/auth');
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, '../uploads');
@@ -15,11 +17,14 @@ if (!fs.existsSync(uploadsDir)) {
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, uploadsDir);
+    const dir = path.join(__dirname, '../uploads/invoices');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    cb(null, dir);
   },
   filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    cb(null, `invoice-${Date.now()}${path.extname(file.originalname)}`);
   }
 });
 
@@ -29,15 +34,15 @@ const fileFilter = (req, file, cb) => {
   if (file.mimetype === 'application/pdf') {
     cb(null, true);
   } else {
-    cb(new Error('Only PDF files are allowed'), false);
+    cb(new Error('Only PDF files are allowed'));
   }
 };
 
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // Increase to 50MB limit
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: fileFilter
-}).single('pdfFile');
+});
 
 // Custom middleware to handle multer errors
 const handleUpload = (req, res, next) => {
@@ -50,7 +55,7 @@ const handleUpload = (req, res, next) => {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({
           success: false,
-          message: 'File size exceeds 50MB limit'
+          message: 'File size exceeds 10MB limit'
         });
       }
       return res.status(400).json({
@@ -134,8 +139,108 @@ router.post('/email/send-po-with-file', handleUpload, emailController.sendPurcha
 router.get('/email/check', emailController.checkEmails);
 
 // Invoice routes
-router.get('/invoices', emailController.getInvoices);
-router.get('/invoices/:invoiceId', emailController.getInvoiceById);
-router.post('/invoices/:invoiceId/link', emailController.linkInvoiceToPO);
+router.get('/invoices', authMiddleware, async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        i.*,
+        s.name as vendor
+      FROM invoices i
+      LEFT JOIN suppliers s ON i.vendor_id = s.id
+      ORDER BY i.extraction_date DESC
+    `;
+    
+    const result = await pool.query(query);
+    
+    // Transform the data to include file URLs
+    const invoices = result.rows.map(invoice => ({
+      ...invoice,
+      fileUrl: `${req.protocol}://${req.get('host')}/api/invoices/${invoice.id}/file`
+    }));
+    
+    res.json(invoices);
+  } catch (error) {
+    console.error('Error fetching invoices:', error);
+    res.status(500).json({ error: 'Failed to fetch invoices', details: error.message });
+  }
+});
+
+// Get a specific invoice file
+router.get('/invoices/:id/file', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const query = 'SELECT file_path, filename FROM invoices WHERE id = $1';
+    const result = await pool.query(query, [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+    
+    const { file_path, filename } = result.rows[0];
+    
+    // Check if file exists
+    if (!fs.existsSync(file_path)) {
+      return res.status(404).json({ error: 'Invoice file not found' });
+    }
+    
+    // Set headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    
+    // Stream the file
+    const fileStream = fs.createReadStream(file_path);
+    fileStream.pipe(res);
+  } catch (error) {
+    console.error('Error fetching invoice file:', error);
+    res.status(500).json({ error: 'Failed to fetch invoice file', details: error.message });
+  }
+});
+
+// Upload a new invoice manually
+router.post('/invoices', authMiddleware, upload.single('invoiceFile'), async (req, res) => {
+  try {
+    const { vendor_id, invoice_number, invoice_date, amount } = req.body;
+    const file = req.file;
+    
+    if (!file) {
+      return res.status(400).json({ error: 'No invoice file uploaded' });
+    }
+    
+    const query = `
+      INSERT INTO invoices (
+        filename, 
+        file_path, 
+        vendor_id, 
+        invoice_number, 
+        invoice_date, 
+        amount, 
+        status, 
+        extraction_date
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      RETURNING *
+    `;
+    
+    const values = [
+      file.originalname,
+      file.path,
+      vendor_id || null,
+      invoice_number || null,
+      invoice_date || null,
+      amount || null,
+      'pending'
+    ];
+    
+    const result = await pool.query(query, values);
+    
+    res.status(201).json({
+      message: 'Invoice uploaded successfully',
+      invoice: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error uploading invoice:', error);
+    res.status(500).json({ error: 'Failed to upload invoice', details: error.message });
+  }
+});
 
 module.exports = router; 

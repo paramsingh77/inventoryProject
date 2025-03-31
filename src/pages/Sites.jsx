@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faMapMarkerAlt, faEdit, faTrash } from '@fortawesome/free-solid-svg-icons';
@@ -91,7 +92,7 @@ document.head.appendChild(customStyles);
 const API_URL = 'http://localhost:2000/api';
 
 const SitesPage = () => {
-    const { user } = useAuth();
+    const { user, checkSiteAccess } = useAuth();
     const navigate = useNavigate();
     const [searchTerm, setSearchTerm] = useState('');
     const [sites, setSites] = useState([]);
@@ -99,6 +100,7 @@ const SitesPage = () => {
     const [error, setError] = useState(null);
     const { darkMode } = useTheme();
     const [usingMockData, setUsingMockData] = useState(false);
+    const { addNotification } = useNotification();
 
     useEffect(() => {
         AOS.init({
@@ -229,25 +231,13 @@ const SitesPage = () => {
         { Name: 'Amarillo Specialty Hospital', Location: 'Amarillo', Img: 'https://americanam.org/wp-content/uploads/2024/06/Amarillo-Placeholder-500x400-1.jpg',Avl:'NOT'  },
     ];
 
+    // Filter sites based on user role
     const filteredSites = sites.filter(site => {
-        const matchesSearch = (
-            site.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (site.location && site.location.toLowerCase().includes(searchTerm.toLowerCase()))
-        );
+        // Admin sees all sites
+        if (user?.role === 'admin') return true;
         
-        // If using mock data, we want to show all sites that match the search
-        if (usingMockData) {
-            return matchesSearch;
-        }
-        
-        if (user && user.role === 'admin') {
-            // Admin can see all sites that match the search
-            return matchesSearch;
-        } else if (user && user.assigned_location) {
-            // Regular users only see their assigned location
-            return matchesSearch && site.name === user.assigned_location;
-        }
-        return false;
+        // Regular users only see their assigned site
+        return user?.assigned_site === site.name;
     });
 
     // Update sortedSites to handle both real and mock data
@@ -271,19 +261,12 @@ const SitesPage = () => {
     };
 
     const handleSiteClick = (site) => {
-        // Store this site as the last selected one
-        localStorage.setItem('lastSelectedSite', JSON.stringify({
-            siteName: site.name,
-            siteLocation: site.location || 'No location'
-        }));
+        if (user?.role !== 'admin' && user?.assigned_site !== site.name) {
+            addNotification('error', 'You do not have access to this site');
+            return;
+        }
         
-        navigate(`/inventory/${site.name}`, { 
-            state: { 
-                siteId: site.id, 
-                siteName: site.name,
-                siteLocation: site.location || 'Location not available'
-            } 
-        });
+        navigate(`/inventory/${site.name}`);
     };
 
     if (loading) {

@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { initializeSchema, checkSchema } = require('./database/schema');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const deviceInventoryRoutes = require('./routes/deviceInventory');
@@ -10,102 +9,214 @@ const csvRoutes = require('./routes/csv.routes');
 const invoiceRoutes = require('./routes/invoice.routes');
 const socketInit = require('./socket');
 const path = require('path');
+const vendorRoutes = require('./routes/vendor.routes');
+const productRoutes = require('./routes/product.routes');
+const sitesRoutes = require('./routes/sites.routes');
+const emailProcessorRoutes = require('./routes/email-processor.routes');
+const usersRoutes = require('./routes/users.routes');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
+const jwt = require('jsonwebtoken');
+const { Pool } = require('pg');
+const session = require('express-session');
 
+// Other required modules
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:3000",
-    methods: ["GET", "POST"],
+    origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
-  }
+  },
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
+  path: '/socket.io'
 });
 
-// Initialize socket.io
-socketInit.init(io);
-
-// Export io for use in other modules
-module.exports.io = io;
-
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false, 
+  crossOriginEmbedderPolicy: false
+}));
 
 // Rate limiting
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: 'Too many requests from this IP, please try again later.'
 });
 
 // Apply rate limiting to auth routes
 app.use('/api/auth', authLimiter);
 
-// CORS configuration
-const corsOptions = {
-  origin: true, // Allow all origins in development
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  credentials: false,
-  preflightContinue: false,
-  optionsSuccessStatus: 204
-};
-
-// Apply CORS first, before other middleware
-app.use(cors(corsOptions));
-
-// Handle preflight separately to ensure it works
-app.options('*', cors(corsOptions));
+// Update CORS configuration
+app.use(cors({
+  origin: process.env.NODE_ENV === 'development' 
+    ? ['http://localhost:3000', 'http://localhost:5173']
+    : process.env.FRONTEND_URL || true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 // Middleware for parsing request body
-app.use(express.json({limit: '50mb'})); // Increase size limit
-app.use(express.urlencoded({ extended: true, limit: '50mb' })); // Increase size limit
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Serve static files from the public directory
+// Static files serving
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Routes
+// OTP functionality
+const generateOtp = () => {
+  return Math.floor(1000 + Math.random() * 9000); // Generate a 4-digit OTP
+};
+
+// Update the nodemailer transporter configuration
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  },
+  debug: true, // Add for troubleshooting
+  logger: true // Add for troubleshooting
+});
+
+// Add a verification step to check the connection
+transporter.verify(function(error, success) {
+  if (error) {
+    console.log('Nodemailer verification error:', error);
+  } else {
+    console.log('Server is ready to send emails');
+  }
+});
+
+// Add this middleware after other middleware but before routes
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-secret-key',
+  resave: false,
+  saveUninitialized: true,
+  cookie: { secure: process.env.NODE_ENV === 'production' }
+}));
+
+// Fix the OTP route to handle errors properly
+app.post('/api/send-otp', (req, res) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+  
+  const otp = generateOtp();
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: 'Your OTP Code',
+    text: `Your OTP code is: ${otp}`
+  };
+
+  // Send OTP email
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      console.error('Email sending error:', error);
+      return res.status(500).json({ error: 'Error sending OTP email' });
+    }
+
+    // Instead of using session, use a temporary storage for demo
+    // You should use a proper database in production
+    const otpData = { otp, email, timestamp: Date.now() };
+    // Store in global OTP map with 10 minute expiry
+    if (!global.otpMap) global.otpMap = new Map();
+    global.otpMap.set(email, otpData);
+    
+    return res.status(200).json({ message: 'OTP sent successfully' });
+  });
+});
+
+// Fix the verify OTP route
+app.post('/api/verify-otp', (req, res) => {
+  const { email, otp } = req.body;
+  
+  console.log("Verifying OTP:", otp, "for email:", email);
+  console.log("OTP Map:", [...(global.otpMap || new Map())].map(([key, value]) => 
+    ({ email: key, storedOtp: value.otp, time: new Date(value.timestamp) })));
+  
+  if (!email || !otp) {
+    return res.status(400).json({ error: 'Email and OTP are required' });
+  }
+  
+  // Get stored OTP data
+  if (!global.otpMap || !global.otpMap.has(email)) {
+    return res.status(400).json({ error: 'No OTP found for this email' });
+  }
+  
+  const otpData = global.otpMap.get(email);
+  console.log("Stored OTP data:", otpData);
+  
+  // Check if OTP is expired (10 minutes)
+  if (Date.now() - otpData.timestamp > 10 * 60 * 1000) {
+    global.otpMap.delete(email);
+    return res.status(400).json({ error: 'OTP expired' });
+  }
+  
+  // Convert both to strings before comparison to avoid type issues
+  if (otpData.otp.toString() === otp.toString()) {
+    // OTP verified, clean up
+    global.otpMap.delete(email);
+    return res.status(200).json({ message: 'OTP verified successfully' });
+  } else {
+    return res.status(400).json({ 
+      error: 'Invalid OTP',
+      expected: otpData.otp.toString(),
+      received: otp.toString()
+    });
+  }
+});
+
+// Initialize socket.io
+socketInit.init(io);
+module.exports.io = io;
+
+// Use other routes (existing)
 app.use('/api/auth', require('./routes/auth.routes'));
-app.use('/api/sites', require('./routes/sites.routes'));
+app.use('/api/sites', sitesRoutes);
+app.use('/api', vendorRoutes);
 app.use('/api/devices', deviceInventoryRoutes);
 app.use('/api/csv', csvRoutes);
 app.use('/api', invoiceRoutes);
 app.use('/api', require('./routes/purchase-order.routes'));
 app.use('/api', require('./routes/supplier.routes'));
+app.use('/api', productRoutes);
+app.use('/api', emailProcessorRoutes);
+app.use('/api/users', require('./routes/users.routes'));
 
-// Import and use mock email routes for development testing
-const mockEmailRoutes = require('./routes/mock-email.routes');
-app.use('/api', mockEmailRoutes);
+// Additional routes as per the previous structure
+// ...
 
-// Add a console message to indicate the mock email service is available
-console.log('\n📧 Mock Email Service enabled');
-console.log('📝 Available mock endpoints:');
-console.log('  - POST /api/mock/email/send-po');
-console.log('  - POST /api/mock/email/send-po-with-file');
-console.log('  - GET  /api/mock/email/check');
-console.log('  - GET  /api/mock/invoices');
-console.log('  - GET  /api/mock/invoices/:invoiceId');
-console.log('  - POST /api/mock/invoices/:invoiceId/link\n');
-console.log('🔄 Test with: http://localhost:2000/api/mock/health\n');
+// Start the server
+const startServer = async () => {
+  try {
+    console.log("Creating database pool with URL:", process.env.DATABASE_URL);
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+    });
+    console.log("Database pool created successfully");
 
-// Socket.IO connection handling
-io.on('connection', (socket) => {
-  console.log('A user connected');
+    await pool.query('SELECT NOW()');
+    console.log('✅ Database connected successfully');
+    httpServer.listen(process.env.PORT || 2000, () => {
+      console.log(`Server running on port ${process.env.PORT || 2000}`);
+    });
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+};
 
-  socket.on('disconnect', () => {
-    console.log('User disconnected');
-  });
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Global error handler:', err);
-  res.status(500).json({
-    success: false,
-    message: 'Internal server error',
-    error: err.message
-  });
-});
+startServer();
 
 // 404 handler
 app.use((req, res) => {
@@ -114,68 +225,3 @@ app.use((req, res) => {
     message: 'Route not found'
   });
 });
-
-// Add a health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Server is running' });
-});
-
-// Add email check endpoint
-app.head('/api/email/check', (req, res) => {
-  res.sendStatus(200);
-});
-
-// Initialize database and start server
-const startServer = async () => {
-  try {
-    // Start the server first, before attempting database initialization
-    const PORT = process.env.PORT || 2000;
-    httpServer.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log('📧 Email functionality is available even without database');
-    });
-
-    // Try to check database schema, but don't initialize/reset it on every startup
-    try {
-      // Check if schema is properly initialized
-      const schemaStatus = await checkSchema();
-      console.log('✅ Schema status:', schemaStatus);
-      
-      // Only initialize schema if it's not properly set up
-      if (!schemaStatus.exists) {
-        console.log('⚠️ Schema does not exist, initializing...');
-        await initializeSchema();
-        console.log('✅ Schema initialized successfully');
-      } else {
-        console.log('✅ Using existing database schema');
-      }
-    } catch (dbError) {
-      console.error('⚠️ Database connection failed:', dbError.message);
-      console.warn('⚠️ Running in limited mode - some features will not work');
-      console.log('✅ Email functionality is still available');
-    }
-    
-    // Start email checker service if enabled
-    if (process.env.ENABLE_EMAIL_CHECKER === 'true') {
-      try {
-        const { startEmailChecker } = require('./utils/emailChecker');
-        startEmailChecker();
-        console.log('✅ Email checker service started');
-      } catch (emailError) {
-        console.error('❌ Failed to start email checker:', emailError.message);
-        console.log('⚠️ Email checking is disabled');
-      }
-    } else {
-      console.log('ℹ️ Email checker is disabled in .env');
-    }
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
-  }
-};
-
-// Start the server
-startServer();
-
-// Export app for testing
-module.exports.app = app; 

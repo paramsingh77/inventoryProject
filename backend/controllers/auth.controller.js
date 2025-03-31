@@ -1,112 +1,88 @@
-const pool = require('../config/db.config');
+const db = require('../db');
 const { generateToken } = require('../utils/jwt.utils');
 const { comparePassword } = require('../utils/password.utils');
 const crypto = require('crypto');
 const { hashPassword } = require('../utils/password.utils');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 
 const login = async (req, res) => {
-  const { username, password } = req.body;
-
   try {
-    // Get user with role and site information
-    const userQuery = `
-      SELECT 
-        u.id,
-        u.username,
-        u.email,
-        u.password_hash,
-        r.name as role_name,
-        s.id as site_id,
-        s.name as site_name,
-        s.location as site_location,
-        s.image_url as site_image,
-        s.is_active as site_active
-      FROM users u
-      JOIN user_roles ur ON u.id = ur.user_id
-      JOIN roles r ON ur.role_id = r.id
-      LEFT JOIN sites s ON ur.site_id = s.id
-      WHERE u.username = $1
-    `;
-
-    const userResult = await pool.query(userQuery, [username]);
-
-    if (userResult.rows.length === 0) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Invalid credentials' 
-      });
+    const { username, email, password } = req.body;
+    
+    if (!password || (!username && !email)) {
+      return res.status(400).json({ error: 'Username/email and password are required' });
     }
-
-    const user = userResult.rows[0];
-
-    // Verify password
-    const validPassword = await comparePassword(password, user.password_hash);
-    if (!validPassword) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Invalid credentials' 
-      });
+    
+    // Find user by username or email
+    let query, params;
+    if (username) {
+      query = 'SELECT id, username, email, password_hash, role, status, assigned_site FROM users WHERE username = $1';
+      params = [username];
+    } else {
+      query = 'SELECT id, username, email, password_hash, role, status, assigned_site FROM users WHERE email = $1';
+      params = [email];
     }
-
-    // Generate JWT token
-    const token = generateToken(user.id, [user.role_name]);
-
-    // Prepare base response
-    const response = {
-      success: true,
+    
+    console.log('Executing query:', query, 'with params:', params);
+    const result = await db.query(query, params);
+    
+    if (result.rows.length === 0) {
+      console.log('No user found with provided credentials');
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    const user = result.rows[0];
+    console.log('User found:', { id: user.id, username: user.username, role: user.role });
+    
+    // Check if user is active
+    if (user.status !== 'active') {
+      console.log('User account is inactive');
+      return res.status(401).json({ error: 'Account is inactive. Please contact an administrator.' });
+    }
+    
+    // Check password
+    console.log('Comparing password...');
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+    
+    if (!isMatch) {
+      console.log('Password does not match');
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    console.log('Password matched, generating token');
+    
+    // Create and return JWT token
+    const token = jwt.sign(
+      { 
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        assigned_site: user.assigned_site
+      },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '24h' }
+    );
+    
+    // Update last login time
+    await db.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
+    
+    // Return user info and token
+    res.json({
       token,
       user: {
         id: user.id,
         username: user.username,
         email: user.email,
-        role: user.role_name
+        role: user.role,
+        assigned_site: user.assigned_site
       }
-    };
-
-    // Handle different roles
-    if (user.role_name === 'admin') {
-      // For admin, fetch all active sites
-      const sitesQuery = `
-        SELECT 
-          id,
-          name,
-          location,
-          image_url,
-          is_active
-        FROM sites
-        WHERE is_active = true
-        ORDER BY name
-      `;
-      
-      const sitesResult = await pool.query(sitesQuery);
-      response.sites = sitesResult.rows;
-      response.redirectTo = '/sites'; // Frontend will redirect to sites page
-    } else {
-      // For regular users, only include their assigned site
-      if (!user.site_id || !user.site_active) {
-        return res.status(403).json({
-          success: false,
-          message: 'No active site assigned to user'
-        });
-      }
-
-      response.site = {
-        id: user.site_id,
-        name: user.site_name,
-        location: user.site_location,
-        image_url: user.site_image
-      };
-      response.redirectTo = `/dashboard/${user.site_id}`; // Frontend will redirect to specific site dashboard
-    }
-
-    res.json(response);
-
+    });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ 
-      success: false,
-      message: 'Internal server error' 
-    });
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -134,7 +110,7 @@ const verifySession = async (req, res) => {
       WHERE u.id = $1
     `;
 
-    const userResult = await pool.query(userQuery, [id]);
+    const userResult = await db.query(userQuery, [id]);
 
     if (userResult.rows.length === 0) {
       return res.status(404).json({
@@ -168,7 +144,7 @@ const verifySession = async (req, res) => {
         ORDER BY name
       `;
       
-      const sitesResult = await pool.query(sitesQuery);
+      const sitesResult = await db.query(sitesQuery);
       response.sites = sitesResult.rows;
       response.redirectTo = '/sites';
     } else {
@@ -198,7 +174,7 @@ const logout = async (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (token) {
       // Store token in blacklist with expiry
-      await pool.query(
+      await db.query(
         'INSERT INTO token_blacklist (token, expires_at) VALUES ($1, NOW() + INTERVAL \'1 day\')',
         [token]
       );
@@ -214,7 +190,7 @@ const logout = async (req, res) => {
 const requestPasswordReset = async (req, res) => {
   const { email } = req.body;
   try {
-    const user = await pool.query('SELECT id, email FROM users WHERE email = $1', [email]);
+    const user = await db.query('SELECT id, email FROM users WHERE email = $1', [email]);
     if (user.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
@@ -224,7 +200,7 @@ const requestPasswordReset = async (req, res) => {
     const resetTokenHash = await hashPassword(resetToken);
 
     // Store reset token
-    await pool.query(
+    await db.query(
       'UPDATE users SET reset_token = $1, reset_token_expires = NOW() + INTERVAL \'1 hour\' WHERE id = $2',
       [resetTokenHash, user.rows[0].id]
     );
@@ -246,7 +222,7 @@ const requestPasswordReset = async (req, res) => {
 const resetPassword = async (req, res) => {
   const { token, newPassword } = req.body;
   try {
-    const user = await pool.query(
+    const user = await db.query(
       'SELECT id FROM users WHERE reset_token_expires > NOW()',
     );
 
@@ -255,7 +231,7 @@ const resetPassword = async (req, res) => {
     }
 
     const hashedPassword = await hashPassword(newPassword);
-    await pool.query(
+    await db.query(
       'UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2',
       [hashedPassword, user.rows[0].id]
     );
@@ -269,57 +245,92 @@ const resetPassword = async (req, res) => {
 
 // Register new user
 const register = async (req, res) => {
-  const { username, email, password, role = 'user', siteId = null } = req.body;
-  
   try {
-    // Start transaction
-    await pool.query('BEGIN');
-
-    // Check if username or email exists
-    const existingUser = await pool.query(
-      'SELECT id FROM users WHERE username = $1 OR email = $2',
-      [username, email]
-    );
-
-    if (existingUser.rows.length > 0) {
-      await pool.query('ROLLBACK');
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Username or email already exists' 
+    const { username, email, password, full_name, role = 'user', status = 'active', assigned_site } = req.body;
+    
+    // Validate required fields
+    if (!username || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username, email and password are required'
       });
     }
-
+    
+    // Check if username or email already exists
+    // Use db.query instead of pool.query
+    const existingUser = await db.query(
+      'SELECT * FROM users WHERE username = $1 OR email = $2',
+      [username, email]
+    );
+    
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'Username or email already exists'
+      });
+    }
+    
     // Hash password
-    const hashedPassword = await hashPassword(password);
-
-    // Insert user
-    const newUser = await pool.query(
-      'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
-      [username, email, hashedPassword]
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+    
+    // Insert new user
+    // Use db.query instead of pool.query
+    const result = await db.query(
+      `INSERT INTO users (username, email, password_hash, full_name, role, status, assigned_site, created_at) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) 
+       RETURNING id, username, email, full_name, role, status, assigned_site, created_at`,
+      [username, email, passwordHash, full_name || '', role, status, assigned_site]
     );
-
-    // Get role id
-    const roleResult = await pool.query(
-      'SELECT id FROM roles WHERE name = $1',
-      [role]
-    );
-
-    // Assign role and site
-    await pool.query(
-      'INSERT INTO user_roles (user_id, role_id, site_id) VALUES ($1, $2, $3)',
-      [newUser.rows[0].id, roleResult.rows[0].id, siteId]
-    );
-
-    await pool.query('COMMIT');
-
+    
     res.status(201).json({
       success: true,
-      message: 'User registered successfully'
+      user: result.rows[0]
     });
   } catch (error) {
-    await pool.query('ROLLBACK');
     console.error('Registration error:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+const sendEmail = async (recipient, subject, content) => {
+  // Skip email sending if explicitly disabled
+  if (process.env.ENABLE_EMAIL === 'false') {
+    console.log('Email sending disabled by configuration');
+    console.log(`Would have sent email to: ${recipient}`);
+    console.log(`Subject: ${subject}`);
+    console.log(`Content: ${content}`);
+    return true;
+  }
+  
+  try {
+    // Create transporter using actual credentials from .env
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.SMTP_PORT || '587', 10),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD
+      }
+    });
+    
+    // Send mail with defined transport object
+    const info = await transporter.sendMail({
+      from: process.env.EMAIL_FROM || `"System" <${process.env.EMAIL_USER}>`,
+      to: recipient,
+      subject: subject,
+      html: content
+    });
+    
+    console.log('Email sent:', info.messageId);
+    return true;
+  } catch (error) {
+    console.error('Error sending email:', error);
+    return false;
   }
 };
 

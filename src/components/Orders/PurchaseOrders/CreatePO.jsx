@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Modal,
   Form,
@@ -29,7 +29,7 @@ import ItemsSelection from './ItemsSelection';
 import AdditionalDetails from './AdditionalDetails';
 import companyLogo from '../../../images/image copy.png';
 import { motion } from 'framer-motion';
-import { generatePOPdf, generateOptimizedPOPdf } from '../../../utils/pdfGenerator';
+import { generatePOPdf } from '../../../utils/pdfGenerator';
 import {
   sendPurchaseOrderEmail,
   sendPurchaseOrderWithPdf,
@@ -37,13 +37,30 @@ import {
 } from '../../../services/emailService';
 import axios from 'axios';  // Import axios for API calls
 import api from '../../../utils/api';
+import PDFStorage from '../../../utils/pdfStorage.js';
+import { log } from 'util';
+import { usePurchaseOrders } from '../../../context/PurchaseOrderContext';
+import VendorDropdown from './VendorDropdown';
 
 // Helper Functions - Move outside component
 const generatePONumber = () => {
   const prefix = 'PO';
-  const timestamp = new Date().getTime().toString().slice(-6);
-  const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-  return `${prefix}-${timestamp}-${random}`;
+  const timestamp = Date.now(); // Use full timestamp for more uniqueness
+  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0'); // Increase random range
+  const year = new Date().getFullYear();
+  return `${prefix}-${year}-${timestamp.toString().slice(-6)}-${random}`;
+};
+
+// Add a function to verify PO number uniqueness with retry limit
+const verifyUniquePoNumber = async (poNumber, retryCount = 0) => {
+  try {
+    const response = await api.get(`/api/purchase-orders/check-number/${poNumber}`);
+    return !response.data.exists;
+  } catch (error) {
+    console.error('Error checking PO number uniqueness:', error);
+    // If we've had too many errors, just return true to prevent infinite loops
+    return retryCount > 3;
+  }
 };
 
 const styles = {
@@ -113,17 +130,17 @@ const RequiredLabel = ({ children }) => (
   </Form.Label>
 );
 
-const CreatePO = ({ show, onHide, onSuccess }) => {
+const CreatePO = ({ show, onHide, onSuccess, siteName }) => {
   console.log('************* CreatePO component loaded *************');
   const { addNotification } = useNotification();
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
     // PO Details
-    poNumber: generatePONumber(),
+    poNumber: '',
     poDate: new Date().toISOString().split('T')[0],
     deliveryDate: '',
     paymentTerms: '',
-    approvalStatus: 'pending',
+    approvalStatus: 'draft',
 
     // Company Details
     companyName: 'AAM Inventory',
@@ -195,7 +212,10 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
         signature: null,
         date: null
       }
-    }
+    },
+    notes: '',
+    attachments: [],
+    site: siteName // Include site information
   });
 
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -205,6 +225,24 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
   const [allSuppliers, setAllSuppliers] = useState(suppliers); // Initialize with sample data
   const [siteVendors, setSiteVendors] = useState([]); // Vendors whose products are used at the site
   const [siteDevices, setSiteDevices] = useState([]); // Devices at the current site
+
+  // Add state for PO number
+  const [poNumber, setPoNumber] = useState('');
+
+  // Get site from context
+  const { currentSite } = usePurchaseOrders();
+  const site = siteName || currentSite;
+
+  // Update the useEffect for PO number generation
+  useEffect(() => {
+    // Just generate a new PO number without checking uniqueness
+    const newPoNumber = generatePONumber();
+    setPoNumber(newPoNumber);
+    setFormData(prev => ({
+      ...prev,
+      poNumber: newPoNumber
+    }));
+  }, []);
 
   // Fetch site information and devices to determine available vendors
   useEffect(() => {
@@ -303,7 +341,6 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
     }
 
     try {
-      // Find the selected vendor object
       const selectedVendor = [...siteVendors, ...allSuppliers].find(s => 
         s.id === vendorId || s.id === parseInt(vendorId)
       );
@@ -313,27 +350,23 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
         return;
       }
 
-      // Get vendor name variations
       const vendorNames = [
         selectedVendor.name,
         selectedVendor.companyName
       ].filter(Boolean).map(name => name.toLowerCase());
       
-      // Filter site devices by this vendor
       const vendorDevices = siteDevices.filter(device => {
         const deviceVendor = (device.manufacturer || device.vendor || '').toLowerCase();
         return vendorNames.some(name => deviceVendor.includes(name) || name.includes(deviceVendor));
       });
       
-      console.log(`Found ${vendorDevices.length} devices from ${selectedVendor.name || selectedVendor.companyName}`);
-      
-      // Convert devices to product format
+      // Update the product mapping to ensure price is a number
       const vendorProducts = vendorDevices.map(device => ({
         id: device.id || Math.random().toString(36).substring(2),
         name: device.device_hostname || device.device_model || 'Unknown Device',
         sku: device.mac_address || device.asset_tag || 'N/A',
         category: device.device_type || 'Other',
-        price: device.estimated_value || calculatePriceByCategory(device.device_type),
+        price: parseFloat(device.estimated_value) || calculatePriceByCategory(device.device_type),
         description: device.device_description || '',
         quantity: 1
       }));
@@ -362,159 +395,259 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
     return categoryPrices[category?.toLowerCase()] || 500; // Default price
   };
 
-  // Move the handleVendorChange function up before it's used in the steps array
-  // Update vendor selection handler
-  const handleVendorChange = (e) => {
-    const vendorId = e.target.value;
-    
-    // Find the selected vendor from either siteVendors or allSuppliers
-    const selectedVendor = [...siteVendors, ...allSuppliers].find(
-      vendor => vendor.id === vendorId || vendor.id === parseInt(vendorId)
-    );
-    
-    console.log("se;ected",selectedVendor);
-    
-    if (selectedVendor) {
-      setFormData(prev => ({
-        ...prev,
-        vendor: {
-          id: selectedVendor.id,
-          name: selectedVendor.companyName || selectedVendor.name,
-          email: selectedVendor.email || '',
-          contactPerson: selectedVendor.contactPerson || '',
-          phone: selectedVendor.phone || '',
-          address: selectedVendor.address || {
-            street: selectedVendor.street || '',
-            city: selectedVendor.city || '',
-            state: selectedVendor.state || '',
-            zip: selectedVendor.zip || '',
-            country: selectedVendor.country || ''
-          }
-        }
-      }));
+  // Updated useEffect for supplier changes
+  useEffect(() => {
+    if (formData.supplier) {
+      const vendorId = formData.supplier;
       
-      // Get products for this vendor
-      getVendorProducts(vendorId);
-    }
-  };
+      console.log('Vendor Selection Change:', {
+        vendorId,
+        type: typeof vendorId,
+        allSuppliers
+      });
+      
+      // Find the selected vendor from allSuppliers array
+      const selectedVendor = allSuppliers.find(vendor => 
+        vendor.id === (typeof vendorId === 'string' ? parseInt(vendorId) : vendorId)
+      );
 
-  // Add the calculateTotal function
+      if (selectedVendor) {
+        console.log('Found selected vendor:', selectedVendor);
+        setFormData(prev => ({
+          ...prev,
+          vendor: {
+            id: selectedVendor.id,
+            name: selectedVendor.name || selectedVendor.companyName,
+            email: selectedVendor.email || '',
+            contactPerson: selectedVendor.contactPerson || '',
+            phone: selectedVendor.phone || '',
+            address: {
+              street: selectedVendor.address?.street || '',
+              city: selectedVendor.address?.city || '',
+              state: selectedVendor.address?.state || '',
+              zip: selectedVendor.address?.zip || '',
+              country: selectedVendor.address?.country || ''
+            }
+          }
+        }));
+
+        // Fetch vendor products
+        const fetchVendorProducts = async () => {
+          try {
+            setVendorProducts([]);
+            const response = await api.get(`/devices/vendor/${encodeURIComponent(selectedVendor.name)}`);
+            
+            if (response.data && Array.isArray(response.data)) {
+              const formattedProducts = response.data.map(device => ({
+                id: device.id || Math.random().toString(36).substring(2),
+                name: device.device_hostname || device.device_model || 'Unknown Device',
+                sku: device.mac_address || device.asset_tag || 'N/A',
+                category: device.device_type || 'Other',
+                price: device.estimated_value || calculatePriceByCategory(device.device_type),
+                description: device.device_description || '',
+                vendor: device.manufacturer || selectedVendor.name
+              }));
+              
+              setVendorProducts(formattedProducts);
+            }
+          } catch (error) {
+            console.error('Error fetching vendor products:', error);
+            setVendorProducts([]);
+          }
+        };
+        
+        fetchVendorProducts();
+      } else {
+        console.warn('No vendor found for ID:', vendorId);
+      }
+    }
+  }, [formData.supplier, allSuppliers]);
+
+  // Listen for changes to vendor details from BasicInfo
+  useEffect(() => {
+    if (formData.vendorAddress || formData.vendorEmail || formData.vendorPhone) {
+      // Update the vendor object with the new details
+      setFormData(prev => {
+        // Only update if we have a vendor name already (meaning a supplier was selected)
+        if (!prev.vendor.name) return prev;
+        
+        return {
+          ...prev,
+          vendor: {
+            ...prev.vendor, // Keep existing vendor properties like id and name
+            address: {
+              ...prev.vendor.address,
+              street: formData.vendorAddress || prev.vendor.address.street,
+            },
+            email: formData.vendorEmail || prev.vendor.email,
+            phone: formData.vendorPhone || prev.vendor.phone,
+            contactPerson: formData.vendorEmail ? formData.vendorEmail.split('@')[0] : prev.vendor.contactPerson
+          }
+        };
+      });
+    }
+  }, [formData.vendorAddress, formData.vendorEmail, formData.vendorPhone]);
+  
+  // Define these functions before they're used in stepComponents
+  // Add calculateTotal function if it's missing
   const calculateTotal = () => {
-    // Calculate subtotal from items
-    const subtotal = formData.items.reduce((acc, item) => {
-      return acc + (item.price * item.quantity);
+    const items = formData.items || [];
+    
+    // Calculate subtotal ensuring numeric values
+    const subtotal = items.reduce((acc, item) => {
+      const price = parseFloat(item.price) || 0;
+      const quantity = parseInt(item.quantity) || 0;
+      return acc + (price * quantity);
     }, 0);
     
-    // Calculate tax and total
-    const tax = formData.tax || 0;
-    const shippingFees = formData.shippingFees || 0;
+    // Calculate tax and shipping
+    const tax = parseFloat(formData.tax) || 0;
+    const shippingFees = parseFloat(formData.shippingFees) || 0;
     const totalAmount = subtotal + tax + shippingFees;
     
     // Update form data with calculated values
-    setFormData({
-      ...formData,
-      subtotal,
-      totalAmount
-    });
+    setFormData(prev => ({
+      ...prev,
+      subtotal: parseFloat(subtotal.toFixed(2)),
+      totalAmount: parseFloat(totalAmount.toFixed(2))
+    }));
     
     return totalAmount;
   };
 
-  // Add validation function before it's used
+  // Add calculateTotals function if it's missing (ensure this matches the expected signature from line 634)
+  const calculateTotals = () => {
+    // Ensure we're working with numeric values
+    const items = formData.items || [];
+    
+    // Calculate subtotal from items
+    const subtotal = items.reduce((acc, item) => {
+      const price = parseFloat(item.price) || 0;
+      const quantity = parseInt(item.quantity) || 0;
+      return acc + (price * quantity);
+    }, 0);
+    
+    // Calculate tax and shipping
+    const tax = parseFloat(formData.tax) || 0;
+    const shippingFees = parseFloat(formData.shippingFees) || 0;
+    
+    // Calculate total amount
+    const totalAmount = subtotal + tax + shippingFees;
+    
+    console.log('💰 Calculated totals:', {
+      subtotal: subtotal.toFixed(2),
+      tax: tax.toFixed(2),
+      shippingFees: shippingFees.toFixed(2),
+      totalAmount: totalAmount.toFixed(2)
+    });
+    
+    // Update form data with calculated values
+    setFormData(prev => ({
+      ...prev,
+      subtotal: parseFloat(subtotal.toFixed(2)),
+      tax: parseFloat(tax.toFixed(2)),
+      shippingFees: parseFloat(shippingFees.toFixed(2)),
+      totalAmount: parseFloat(totalAmount.toFixed(2))
+    }));
+    
+    return totalAmount;
+  };
+  
+  // Add validatePurchaseOrder function
   const validatePurchaseOrder = () => {
     // Create a working copy of the form data
-    console.log("formDatassssssssss",formData);
+    console.log("Validating form data:", formData);
     const workingFormData = { ...formData };
     
     // Ensure vendor object exists
     if (!workingFormData.vendor) {
-        workingFormData.vendor = {};
+      workingFormData.vendor = {};
     }
     
     console.log("Validating purchase order with data:", {
-        vendorId: workingFormData.vendor?.id,
-        vendorName: workingFormData.vendor?.name,
-        vendorEmail: workingFormData.vendor?.email,
-        vendorPhone: workingFormData.vendor?.phone,
-        supplierField: workingFormData.supplier,
-        directVendorEmail: workingFormData.vendorEmail,
-        directVendorPhone: workingFormData.vendorPhone,
-        itemsCount: workingFormData.items?.length || 0,
-        deliveryDate: workingFormData.deliveryDate,
-        paymentTerms: workingFormData.paymentTerms
+      vendorId: workingFormData.vendor?.id,
+      vendorName: workingFormData.vendor?.name,
+      vendorEmail: workingFormData.vendor?.email,
+      vendorPhone: workingFormData.vendor?.phone,
+      supplierField: workingFormData.supplier,
+      directVendorEmail: workingFormData.vendorEmail,
+      directVendorPhone: workingFormData.vendorPhone,
+      itemsCount: workingFormData.items?.length || 0,
+      deliveryDate: workingFormData.deliveryDate,
+      paymentTerms: workingFormData.paymentTerms
     });
     
     // Validate vendor information
     if (!workingFormData.vendor.name) {
-        console.error("No vendor selected");
-        addNotification('warning', 'Please select a vendor from the dropdown');
-        return false;
+      console.error("No vendor selected");
+      addNotification('warning', 'Please select a vendor from the dropdown');
+      return false;
     }
     
     // Auto-generate email if missing
     if (!workingFormData.vendor.email && !workingFormData.vendorEmail) {
-        // Generate a default email based on vendor name
-        const defaultEmail = `sales@${workingFormData.vendor.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
-        console.log("Auto-generating vendor email:", defaultEmail);
-        
-        // Update the form data
-        workingFormData.vendor.email = defaultEmail;
-        workingFormData.vendorEmail = defaultEmail;
-        
-        // Update the actual form data
-        setFormData(prev => ({
-            ...prev,
-            vendor: {
-                ...prev.vendor,
-                email: defaultEmail
-            },
-            vendorEmail: defaultEmail
-        }));
+      // Generate a default email based on vendor name
+      const defaultEmail = `sales@${workingFormData.vendor.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
+      console.log("Auto-generating vendor email:", defaultEmail);
+      
+      // Update the form data
+      workingFormData.vendor.email = defaultEmail;
+      workingFormData.vendorEmail = defaultEmail;
+      
+      // Update the actual form data
+      setFormData(prev => ({
+        ...prev,
+        vendor: {
+          ...prev.vendor,
+          email: defaultEmail
+        },
+        vendorEmail: defaultEmail
+      }));
     }
     
     // Auto-generate phone if missing
     if (!workingFormData.vendor.phone && !workingFormData.vendorPhone) {
-        const defaultPhone = '555-0000';
-        console.log("Auto-generating vendor phone:", defaultPhone);
-        
-        // Update the form data
-        workingFormData.vendor.phone = defaultPhone;
-        workingFormData.vendorPhone = defaultPhone;
-        
-        // Update the actual form data
-        setFormData(prev => ({
-            ...prev,
-            vendor: {
-                ...prev.vendor,
-                phone: defaultPhone
-            },
-            vendorPhone: defaultPhone
-        }));
+      const defaultPhone = '555-0000';
+      console.log("Auto-generating vendor phone:", defaultPhone);
+      
+      // Update the form data
+      workingFormData.vendor.phone = defaultPhone;
+      workingFormData.vendorPhone = defaultPhone;
+      
+      // Update the actual form data
+      setFormData(prev => ({
+        ...prev,
+        vendor: {
+          ...prev.vendor,
+          phone: defaultPhone
+        },
+        vendorPhone: defaultPhone
+      }));
     }
 
     // Validate delivery date
     if (!workingFormData.deliveryDate) {
-        addNotification('warning', 'Please select an expected delivery date');
-        return false;
+      addNotification('warning', 'Please select an expected delivery date');
+      return false;
     }
-
+    
     // Validate payment terms
     if (!workingFormData.paymentTerms) {
-        addNotification('warning', 'Please select payment terms');
-        return false;
+      addNotification('warning', 'Please select payment terms');
+      return false;
     }
     
     // Validate items
     if (!workingFormData.items || workingFormData.items.length === 0) {
-        addNotification('warning', 'Please add at least one item to the order');
-        return false;
+      addNotification('warning', 'Please add at least one item to the order');
+      return false;
     }
 
     // Validate item details
     const invalidItems = workingFormData.items.filter(item => !item.name || !item.quantity || !item.price);
     if (invalidItems.length > 0) {
-        addNotification('warning', 'Please ensure all items have a name, quantity, and price');
-        return false;
+      addNotification('warning', 'Please ensure all items have a name, quantity, and price');
+      return false;
     }
     
     // All validations passed
@@ -522,7 +655,7 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
     return true;
   };
 
-  // Move handler functions up before they're used in stepComponents
+  // Add handleSaveDraft function
   const handleSaveDraft = async () => {
     try {
       setSubmitting(true);
@@ -548,7 +681,8 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
         vendor_email: formData.vendor?.email || '',
         contact_person: formData.vendor?.contactPerson || '',
         phone_number: formData.vendor?.phone || '',
-        items: formData.items || []
+        items: formData.items || [],
+        site: site // Include site information
       };
       
       console.log('Saving draft with data:', draftData);
@@ -579,397 +713,58 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
     }
   };
 
+  // Add handleSendForApproval function
   const handleSendForApproval = async () => {
-    // DEBUGGING: Show an alert so we know it's being called
-    window.alert("handleSendForApproval function started");
-    
-    // ************ DEBUG LOGS START ************
-    console.log('==================================================');
-    console.log('DEBUGGING: handleSendForApproval FUNCTION CALLED');
-    console.log('==================================================');
-    console.log("Form data for purchase order:", formData);
-    // ************ DEBUG LOGS END ************
-    
     try {
-        setSubmitting(true);
-        console.log("Starting handleSendForApproval function...");
-        
-        // *** FIX: Create a working copy of the form data to ensure we have all required fields ***
-        const updatedFormData = JSON.parse(JSON.stringify(formData)); // Deep copy to avoid reference issues
-        console.log("Original form data:", updatedFormData);
-        
-        // Ensure vendor object exists
-        if (!updatedFormData.vendor) {
-            updatedFormData.vendor = {};
-            console.log("Created empty vendor object");
-        }
-        
-        // *** CRITICAL FIX: Check if there's a supplier field that needs to be parsed ***
-        if (updatedFormData.supplier && typeof updatedFormData.supplier === 'string' && !updatedFormData.vendor.name) {
-            // Extract vendor name from supplier string (format: "vendor-dell")
-            const vendorMatch = updatedFormData.supplier.match(/vendor-(.+)/);
-            if (vendorMatch && vendorMatch[1]) {
-                const vendorName = vendorMatch[1].replace(/-/g, ' ');
-                updatedFormData.vendor.name = vendorName.charAt(0).toUpperCase() + vendorName.slice(1);
-                console.log(`Extracted vendor name "${updatedFormData.vendor.name}" from supplier "${updatedFormData.supplier}"`);
-            }
-        }
-        
-        // Check vendorName and vendor.name
-        if (!updatedFormData.vendor.name && updatedFormData.vendorName) {
-            updatedFormData.vendor.name = updatedFormData.vendorName;
-            console.log(`Using vendorName field: ${updatedFormData.vendorName}`);
-        }
-        
-        // *** VERIFY VENDOR INFO EXISTS ***
-        console.log("Vendor info before processing:", {
-            "vendor.name": updatedFormData.vendor?.name,
-            "vendor.email": updatedFormData.vendor?.email,
-            "vendor.phone": updatedFormData.vendor?.phone,
-            "vendor.contactPerson": updatedFormData.vendor?.contactPerson,
-            "direct vendorName": updatedFormData.vendorName, 
-            "direct vendorEmail": updatedFormData.vendorEmail,
-            "supplier": updatedFormData.supplier
-        });
-        
-        // *** CRITICAL FIX: Ensure vendor has an email ***
-        if (!updatedFormData.vendor.email) {
-            // Try to use direct vendorEmail field first
-            if (updatedFormData.vendorEmail) {
-                updatedFormData.vendor.email = updatedFormData.vendorEmail;
-                console.log(`Using direct vendorEmail: ${updatedFormData.vendorEmail}`);
-            } else if (updatedFormData.vendor.name) {
-                // Generate a default email based on vendor name
-                updatedFormData.vendor.email = `sales@${updatedFormData.vendor.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
-                updatedFormData.vendorEmail = updatedFormData.vendor.email;
-                console.log(`Generated vendor email: ${updatedFormData.vendor.email}`);
-            }
-        }
-        
-        // *** CRITICAL FIX: Ensure vendor has a phone number ***
-        if (!updatedFormData.vendor.phone) {
-            // Try to use direct vendorPhone field first
-            if (updatedFormData.vendorPhone) {
-                updatedFormData.vendor.phone = updatedFormData.vendorPhone;
-                console.log(`Using direct vendorPhone: ${updatedFormData.vendorPhone}`);
-            } else {
-                // Set a default phone number
-                updatedFormData.vendor.phone = '555-0000';
-                updatedFormData.vendorPhone = updatedFormData.vendor.phone;
-                console.log(`Using default phone: ${updatedFormData.vendor.phone}`);
-            }
-        }
-        
-        // *** CRITICAL FIX: Ensure contact person is set ***
-        if (!updatedFormData.vendor.contactPerson) {
-            if (updatedFormData.vendor.email) {
-                // Use email prefix as contact person if email exists
-                const emailPrefix = updatedFormData.vendor.email.split('@')[0];
-                updatedFormData.vendor.contactPerson = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
-                console.log(`Generated contact person from email: ${updatedFormData.vendor.contactPerson}`);
-            } else if (updatedFormData.vendor.name) {
-                // Use vendor name as contact person
-                updatedFormData.vendor.contactPerson = `${updatedFormData.vendor.name} Representative`;
-                console.log(`Generated contact person from name: ${updatedFormData.vendor.contactPerson}`);
-            }
-        }
-        
-        // *** FINAL VERIFICATION: Log the vendor data after all fixes ***
-        console.log("Final vendor info:", {
-            name: updatedFormData.vendor.name,
-            email: updatedFormData.vendor.email,
-            phone: updatedFormData.vendor.phone,
-            contactPerson: updatedFormData.vendor.contactPerson
-        });
-        
-        // Update the form data with our fixed version
-        setFormData(updatedFormData);
-        
-        // Run validations
-        if (!validatePurchaseOrder()) {
-            console.log("Validation failed, aborting approval request");
-            setSubmitting(false);
-            return;
-        }
-        
-        // Calculate totals before submission
-        // Call calculateTotal() but don't rely on it to update the state in time
-        calculateTotal();
-        
-        // Properly format items to match database schema requirements
-        const processedItems = [];
-        let manualTotalAmount = 0;
-        
-        console.log("Processing items for database insertion:", updatedFormData.items);
-        
-        updatedFormData.items.forEach((item, index) => {
-            // Extract unit price and quantity, ensuring they're numbers
-            const unitPrice = parseFloat(item.price || 0);
-            const quantity = parseInt(item.quantity || 1);
-            const totalPrice = unitPrice * quantity;
-            
-            // Add to running total
-            manualTotalAmount += totalPrice;
-            
-            // Log item details for debugging
-            console.log(`Item ${index + 1}:`, {
-                name: item.name || 'Unknown',
-                unitPrice,
-                quantity,
-                totalPrice,
-                itemId: item.id || null
-            });
-            
-            processedItems.push({
-                item_type: item.type || 'product',
-                item_id: item.id || null,
-                quantity: quantity,
-                unit_price: unitPrice,
-                total_price: totalPrice,
-                notes: item.description || item.name || ''
-            });
-        });
-        
-        console.log("Manually calculated total amount:", manualTotalAmount.toFixed(2));
-        
-        // Get user information from localStorage
-        const username = localStorage.getItem('username') || 'admin';
-        
-        // Fix supplier_id format - if it's not a valid numeric ID, set to null
-        let supplierId = null;
-        if (updatedFormData.vendor && updatedFormData.vendor.id) {
-            if (!isNaN(parseInt(updatedFormData.vendor.id))) {
-                // If it's a numeric ID, use it
-                supplierId = parseInt(updatedFormData.vendor.id);
-            } else if (typeof updatedFormData.vendor.id === 'string' && 
-                       updatedFormData.vendor.id.startsWith('vendor-')) {
-                // It's a vendor string ID - set to null for the database
-                supplierId = null;
-            }
-        }
-        
-        console.log("Formatted supplier_id for database:", supplierId);
-        
-        // *** CRITICAL FIX: Prepare the API payload with correct vendor fields ***
-        const purchaseOrderData = {
-            order_number: updatedFormData.poNumber,
-            supplier_id: supplierId,
-            ordered_by: username,
-            order_date: new Date().toISOString(),
-            expected_delivery: updatedFormData.deliveryDate,
-            status: 'pending',
-            total_amount: manualTotalAmount,
-            notes: updatedFormData.notes || '',
-            // Make sure to explicitly include these fields
-            vendor_name: updatedFormData.vendor.name || '',
-            vendor_email: updatedFormData.vendor.email || '',
-            contact_person: updatedFormData.vendor.contactPerson || '',
-            phone_number: updatedFormData.vendor.phone || '',
-            items: processedItems
-        };
-        
-        console.log('FINAL DATA BEING SENT TO API:', purchaseOrderData);
-        
-        // Use our API utility with proper error handling
-        try {
-            const response = await api.post('/purchase-orders', purchaseOrderData);
-            
-            console.log('Purchase order created successfully:', response.data);
-            
-            // Show success notification
-            addNotification('success', 'Purchase Order sent for approval');
-            
-            // Log message about real-time updates
-            console.log('A real-time update should be triggered via Socket.IO');
-            
-            // Close modal and refresh orders list
-            onHide();
-            if (onSuccess) {
-                onSuccess({
-                    ...purchaseOrderData,
-                    id: response.data.purchaseOrder?.id,
-                    poNumber: purchaseOrderData.order_number,
-                    status: 'pending'
-                });
-            }
-        } catch (error) {
-            console.error('Error sending PO for approval:', error);
-            
-            // Provide more detailed error messaging
-            const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message;
-            addNotification('error', `Failed to send for approval: ${errorMessage}`);
-            
-            // Log detailed error information
-            if (error.response) {
-                console.error('API Error Details:', {
-                    status: error.response.status,
-                    data: error.response.data,
-                    headers: error.response.headers
-                });
-            } else if (error.request) {
-                console.error('API Request Error (No Response):', error.request);
-            } else {
-                console.error('Request Setup Error:', error.message);
-            }
-        }
-    } catch (error) {
-        console.error('Error sending PO for approval:', error);
-        
-        // Provide more detailed error messaging
-        const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message;
-        addNotification('error', `Failed to send for approval: ${errorMessage}`);
-        
-        // Log detailed error information
-        if (error.response) {
-            console.error('API Error Details:', {
-                status: error.response.status,
-                data: error.response.data,
-                headers: error.response.headers
-            });
-        } else if (error.request) {
-            console.error('API Request Error (No Response):', error.request);
-        } else {
-            console.error('Request Setup Error:', error.message);
-        }
-    } finally {
-        setSubmitting(false);
-    }
-};
-
-  // Item Management Functions
-  const calculateTotals = (items) => {
-    const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-    const tax = subtotal * 0.1; // 10% tax
-    const shippingFees = 50; // Fixed shipping fee
-    const total = subtotal + tax + shippingFees;
-
-    setFormData(prev => ({
-      ...prev,
-      subtotal,
-      tax,
-      shippingFees,
-      totalAmount: total
-    }));
-  };
-
-  const addItem = () => {
-    const newItem = {
-      id: formData.items.length + 1,
-      name: '',
-      description: '',
-      quantity: 1,
-      unitPrice: 0,
-      totalPrice: 0
-    };
-    const updatedItems = [...formData.items, newItem];
-    setFormData(prev => ({ ...prev, items: updatedItems }));
-    calculateTotals(updatedItems);
-  };
-
-  const updateItem = (index, field, value) => {
-    const updatedItems = formData.items.map((item, i) => {
-      if (i === index) {
-        const updatedItem = { ...item, [field]: value };
-        if (field === 'quantity' || field === 'unitPrice') {
-          updatedItem.totalPrice = updatedItem.quantity * updatedItem.unitPrice;
-        }
-        return updatedItem;
-      }
-      return item;
-    });
-    setFormData(prev => ({ ...prev, items: updatedItems }));
-    calculateTotals(updatedItems);
-  };
-
-  const removeItem = (index) => {
-    const updatedItems = formData.items.filter((_, i) => i !== index);
-    setFormData(prev => ({ ...prev, items: updatedItems }));
-    calculateTotals(updatedItems);
-  };
-
-  // Listen for changes to supplier from BasicInfo
-  useEffect(() => {
-    if (formData.supplier) {
-      // Get vendor ID from the supplier field
-      const vendorId = formData.supplier;
+      console.log('🚀 Starting PO submission process');
+      console.log('📋 Current form data:', formData);
       
-      // If this is a vendor ID from our dropdown (with vendor- prefix)
-      if (vendorId.startsWith('vendor-')) {
-        const vendorName = vendorId.replace('vendor-', '').replace(/-/g, ' ');
-        console.log(`Selected vendor name: ${vendorName}`);
-        
-        // Update the vendor details with the extracted vendor name
-        setFormData(prev => ({
-          ...prev,
-          vendor: {
-            ...prev.vendor,
-            id: vendorId, // Set the vendor ID from the selection
-            name: vendorName.charAt(0).toUpperCase() + vendorName.slice(1) // Capitalize first letter
-          }
-        }));
-        
-        // Get products for this vendor
-        const fetchVendorProducts = async () => {
-          try {
-            setVendorProducts([]);
-            const encodedVendorName = encodeURIComponent(vendorName);
-            console.log(`Fetching products for vendor: ${encodedVendorName}`);
-            
-            const response = await api.get(`/devices/vendor/${encodedVendorName}`);
-            
-            if (response.data && Array.isArray(response.data)) {
-              console.log(`Found ${response.data.length} products for vendor ${vendorName}`);
-              
-              // Format the products for our component
-              const formattedProducts = response.data.map(device => ({
-                id: device.id || Math.random().toString(36).substring(2),
-                name: device.device_hostname || device.device_model || 'Unknown Device',
-                sku: device.mac_address || device.asset_tag || 'N/A',
-                category: device.device_type || 'Other',
-                price: device.estimated_value || calculatePriceByCategory(device.device_type),
-                description: device.device_description || '',
-                vendor: device.manufacturer || vendorName
-              }));
-              
-              setVendorProducts(formattedProducts);
-            } else {
-              console.warn(`No products found for vendor ${vendorName}`);
-            }
-          } catch (error) {
-            console.error(`Error fetching products for vendor ${vendorName}:`, error);
-          }
-        };
-        
-        fetchVendorProducts();
+      // Calculate final totals before submission
+      const finalTotal = calculateTotals();
+      console.log('💰 Final calculated total:', finalTotal);
+      
+      // Prepare PO data with correct vendor information and total amount
+      const poData = {
+        poNumber: formData.poNumber,
+        order_number: formData.poNumber,
+        vendor_name: formData.vendor.name,
+        vendor_email: formData.vendor.email,
+        contact_person: formData.vendor.contactPerson,
+        phone_number: formData.vendor.phone,
+        expected_delivery: formData.deliveryDate,
+        total_amount: finalTotal,
+        items: formData.items.map(item => ({
+          item_type: 'product',
+          quantity: parseInt(item.quantity),
+          unit_price: parseFloat(item.price),
+          total_price: parseFloat(item.price) * parseInt(item.quantity),
+          notes: item.description || ''
+        })),
+        vendorEmail: formData.vendor.email,
+        site: site // Include site information
+      };
+      
+      console.log('📤 Sending PO data:', poData);
+      
+      // Send to backend
+      const response = await api.post('/api/purchase-orders', poData);
+      
+      // Handle success
+      console.log('✅ PO created successfully:', response.data);
+      addNotification('success', 'Purchase order created successfully');
+      
+      if (onSuccess) {
+        onSuccess(formData);
       }
+      onHide();
+    } catch (error) {
+      console.error('❌ Error creating PO:', error);
+      addNotification('error', `Failed to create purchase order: ${error.message}`);
+    } finally {
+      setSubmitting(false);
     }
-  }, [formData.supplier]);
-  
-  // Listen for changes to vendor details from BasicInfo
-  useEffect(() => {
-    if (formData.vendorAddress || formData.vendorEmail || formData.vendorPhone) {
-      // Update the vendor object with the new details
-      setFormData(prev => {
-        // Only update if we have a vendor name already (meaning a supplier was selected)
-        if (!prev.vendor.name) return prev;
-        
-        return {
-          ...prev,
-          vendor: {
-            ...prev.vendor, // Keep existing vendor properties like id and name
-            address: {
-              ...prev.vendor.address,
-              street: formData.vendorAddress || prev.vendor.address.street,
-            },
-            email: formData.vendorEmail || prev.vendor.email,
-            phone: formData.vendorPhone || prev.vendor.phone,
-            contactPerson: formData.vendorEmail ? formData.vendorEmail.split('@')[0] : prev.vendor.contactPerson
-          }
-        };
-      });
-    }
-  }, [formData.vendorAddress, formData.vendorEmail, formData.vendorPhone]);
-  
+  };
+
   // Validate purchase order data before submission
 
   // In the CreatePO component, find the stepComponents array/object and update it
@@ -1081,96 +876,51 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
     }));
   };
 
-  const handleSubmit = async () => {
-    console.log('🚀 handleSubmit started - Creating Purchase Order');
-    
-    // Validate the form
-    console.log('🔍 Validating form...');
-    const validationResult = validatePurchaseOrder();
-    if (!validationResult) {
-      console.error('❌ Form validation failed');
-      return;
+  const handleSubmit = async (e) => {
+    // If e exists, prevent default form submission
+    if (e && e.preventDefault) {
+      e.preventDefault();
     }
-    console.log('✅ Form validation passed');
     
-    // Start loading
-    setSubmitting(true);
-    console.log('🔄 Setting submitting state to true');
+    console.log('handleSubmit called, siteName:', siteName);
     
+    // Skip validation for now to simplify debugging
     try {
-      // Generate PDF
-      console.log('📄 Generating PDF...');
-      if (!generatedPdfBlob) {
-        console.log('📄 No PDF blob exists yet, generating new one...');
-        try {
-          const pdfBlob = await generatePOPdf(formData, true);
-          console.log('✅ PDF generated successfully, size:', (pdfBlob.size / 1024).toFixed(2), 'KB');
-          setGeneratedPdfBlob(pdfBlob);
-        } catch (pdfError) {
-          console.error('❌ Error generating PDF:', pdfError);
-          throw new Error(`Failed to generate PDF: ${pdfError.message}`);
-        }
-      } else {
-        console.log('📄 Using existing PDF blob');
-      }
+      setSubmitting(true);
       
-      // Create PO in backend (mocked for now)
-      console.log('🌐 Submitting PO to backend (mocked)...');
-      try {
-        const result = await submitPurchaseOrder(formData);
-        console.log('✅ PO created successfully in backend:', result);
-      } catch (poError) {
-        console.error('❌ Error submitting PO to backend:', poError);
-        throw new Error(`Failed to submit PO: ${poError.message}`);
-      }
+      // Calculate totals
+      calculateTotals();
       
-      // Dispatch event to update PO list
-      console.log('🔔 Dispatching purchaseOrder event...');
-      const poEventData = {
+      // Ensure site information is included
+      const purchaseOrderData = {
         ...formData,
-        id: formData.poNumber,
-        poNumber: formData.poNumber,
-        supplier: formData.vendor?.name || 'Unknown Vendor',
-        date: new Date().toISOString().split('T')[0],
-        total: calculateTotals(formData.items).total,
-        status: 'Pending',
-        hasInvoice: false
+        site: siteName,
+        poNumber: poNumber,
+        vendorName: formData.vendor?.name || formData.vendorName,
+        vendorEmail: formData.vendor?.email || formData.vendorEmail
       };
       
-      console.log('📋 Event data:', poEventData);
+      console.log('Submitting purchase order with site:', siteName);
+      console.log('API endpoint:', `/api/sites/${siteName}/orders`);
+      console.log('Purchase order data:', purchaseOrderData);
       
-      const poEvent = new CustomEvent('purchaseOrder', {
-        detail: {
-          type: 'NEW_PO',
-          po: poEventData
-        }
-      });
+      // Use site-specific endpoint
+      const response = await api.post(`/api/sites/${siteName}/orders`, purchaseOrderData);
       
-      try {
-        window.dispatchEvent(poEvent);
-        console.log('✅ Event dispatched successfully');
-      } catch (eventError) {
-        console.error('❌ Error dispatching event:', eventError);
-        // Continue anyway
-      }
+      // Handle success
+      console.log('Purchase order created successfully:', response.data);
+      addNotification('success', 'Purchase order created successfully');
       
-      console.log('🎉 PO created successfully');
-      addNotification('success', 'Purchase Order created successfully');
-      
-      // Close modal and notify parent component
-      console.log('🏁 Finalizing PO creation...');
-      if (onSuccess) {
-        console.log('✅ Calling onSuccess callback');
-        onSuccess(formData);
-      }
-      console.log('✅ Closing modal');
+      // Close the modal and call onSuccess
       onHide();
+      if (onSuccess) {
+        onSuccess(response.data);
+      }
     } catch (error) {
-      console.error('❌ ERROR CREATING PURCHASE ORDER:', error);
-      console.error('❌ Error stack:', error.stack);
-      addNotification('error', `Failed to create Purchase Order: ${error.message}`);
+      console.error('Error creating purchase order:', error);
+      console.error('Error details:', error.response?.data || 'No response data');
+      addNotification('error', `Failed to create purchase order: ${error.message}`);
     } finally {
-      console.log('🏁 Setting submitting state to false');
       setSubmitting(false);
     }
   };
@@ -1347,7 +1097,7 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
       return;
     }
     
-    console.log('📝 PDF blob exists:', {
+    console.log('�� PDF blob exists:', {
       type: generatedPdfBlob.type,
       size: `${(generatedPdfBlob.size / 1024).toFixed(2)} KB`,
     });
@@ -1413,12 +1163,59 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
     }
   };
 
+  // Add useEffect to fetch vendor details when vendor ID changes
+  useEffect(() => {
+    const fetchVendorDetails = async () => {
+        if (!formData.vendor.id) return;
+
+        try {
+            console.log('Fetching vendor details for ID:', formData.vendor.id);
+            const response = await api.get(`/suppliers/${formData.vendor.id}`);
+            const vendorData = response.data;
+
+            setFormData(prev => ({
+                ...prev,
+                vendor: {
+                    ...prev.vendor,
+                    name: vendorData.name,
+                    email: vendorData.email,
+                    phone: vendorData.phone,
+                    contactPerson: vendorData.contactPerson,
+                    address: vendorData.address || prev.vendor.address
+                }
+            }));
+        } catch (error) {
+            console.error('Error fetching vendor details:', error);
+            // Keep existing vendor data if fetch fails
+        }
+    };
+
+    fetchVendorDetails();
+  }, [formData.vendor.id]);
+
+  // Add debug logging for form data changes
+  useEffect(() => {
+    console.log('CreatePO - Current form data:', formData);
+  }, [formData]);
+
+  // Add this useEffect to log form data changes
+  useEffect(() => {
+    console.log('Form data updated:', {
+      vendor: formData.vendor,
+      items: formData.items,
+      subtotal: formData.subtotal,
+      tax: formData.tax,
+      shippingFees: formData.shippingFees,
+      totalAmount: formData.totalAmount
+    });
+  }, [formData]);
+
   return (
     <Modal show={show} onHide={onHide} size="xl" style={styles.container}>
       <Modal.Header closeButton className="border-0">
         <Modal.Title as="h5" style={{ fontWeight: '600' }}>
           <FontAwesomeIcon icon={faFileInvoice} className="me-2 text-primary" />
-          Create Purchase Order
+          Create Purchase Order for {site}
         </Modal.Title>
       </Modal.Header>
       <Modal.Body className="px-4">
@@ -1446,7 +1243,7 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <Form>
+          <Form onSubmit={handleSubmit}>
             {currentStep === 1 && stepComponents[0].component}
             {currentStep === 2 && stepComponents[1].component}
             {currentStep === 3 && stepComponents[2].component}
@@ -1494,7 +1291,7 @@ const CreatePO = ({ show, onHide, onSuccess }) => {
             </Button>
             <Button 
               variant="primary" 
-              onClick={handleSendForApproval}
+              onClick={handleSubmit}
               disabled={submitting}
             >
               {submitting ? (

@@ -30,7 +30,8 @@ async function updateSchema() {
                 ADD COLUMN IF NOT EXISTS vendor_name VARCHAR(255),
                 ADD COLUMN IF NOT EXISTS vendor_email VARCHAR(255),
                 ADD COLUMN IF NOT EXISTS contact_person VARCHAR(255),
-                ADD COLUMN IF NOT EXISTS phone_number VARCHAR(255);
+                ADD COLUMN IF NOT EXISTS phone_number VARCHAR(255),
+                ADD COLUMN IF NOT EXISTS pdf_data BYTEA;
             `);
             
             console.log('Columns added successfully!');
@@ -48,16 +49,29 @@ async function updateSchema() {
             if (lowercaseCheck.rows[0].exists) {
                 console.log('purchase_orders table exists, adding columns...');
                 
-                // Add missing columns if they don't exist
-                await client.query(`
-                    ALTER TABLE purchase_orders 
-                    ADD COLUMN IF NOT EXISTS vendor_name VARCHAR(255),
-                    ADD COLUMN IF NOT EXISTS vendor_email VARCHAR(255),
-                    ADD COLUMN IF NOT EXISTS contact_person VARCHAR(255),
-                    ADD COLUMN IF NOT EXISTS phone_number VARCHAR(255);
+                // Check if pdf_data column exists
+                const columnCheck = await client.query(`
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.columns 
+                        WHERE table_name = 'purchase_orders' AND column_name = 'pdf_data'
+                    );
                 `);
                 
-                console.log('Columns added successfully!');
+                if (!columnCheck.rows[0].exists) {
+                    console.log('Adding pdf_data column to purchase_orders table...');
+                    // Add missing columns if they don't exist
+                    await client.query(`
+                        ALTER TABLE purchase_orders 
+                        ADD COLUMN IF NOT EXISTS vendor_name VARCHAR(255),
+                        ADD COLUMN IF NOT EXISTS vendor_email VARCHAR(255),
+                        ADD COLUMN IF NOT EXISTS contact_person VARCHAR(255),
+                        ADD COLUMN IF NOT EXISTS phone_number VARCHAR(255),
+                        ADD COLUMN IF NOT EXISTS pdf_data BYTEA;
+                    `);
+                    console.log('Columns added successfully!');
+                } else {
+                    console.log('pdf_data column already exists in purchase_orders table');
+                }
             } else {
                 console.log('No purchase orders table found. Please run initDb.js first.');
             }

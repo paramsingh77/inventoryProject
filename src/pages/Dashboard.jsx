@@ -155,12 +155,6 @@ const Dashboard = () => {
         description: 'Manage supplier information and contracts',
         color: '#9C27B0'
       },
-      {
-        icon: faChartBar,
-        title: 'Reports',
-        description: 'View analytics and generate reports',
-        color: '#F44336'
-      }
     ];
     
     // If we have a site context, use site-specific paths
@@ -182,7 +176,7 @@ const Dashboard = () => {
 
   return (
     <div style={styles.container}>
-      <ThemeToggle />
+      {/* <ThemeToggle /> */}
       <Container fluid>
         <h4 style={styles.title}>
           {siteDisplay ? `${siteDisplay} Dashboard` : 'Dashboard'}

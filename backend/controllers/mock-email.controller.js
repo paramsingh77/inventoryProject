@@ -5,11 +5,100 @@
  * to an email server or requiring valid email credentials.
  */
 
+const nodemailer = require('nodemailer');
+
+// Create reusable transporter object using SMTP transport
+const createTransporter = () => {
+  // Create a test account if we're in development
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Creating development email transport...');
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD
+      },
+      tls: {
+        rejectUnauthorized: false
+      },
+      debug: true,
+      logger: true
+    });
+  }
+  
+  // Production transport
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD
+    },
+    tls: {
+      rejectUnauthorized: false
+    }
+  });
+};
+
+// Function to send real email
+const sendRealEmail = async (to, subject, message, attachment = null) => {
+  try {
+    const transporter = createTransporter();
+    
+    // Log the email configuration (without sensitive data)
+    console.log('Email Configuration:', {
+      host: transporter.options.host,
+      port: transporter.options.port,
+      secure: transporter.options.secure,
+      user: process.env.EMAIL_USER
+    });
+    
+    const mailOptions = {
+      from: {
+        name: 'AAM Inventory',
+        address: process.env.EMAIL_USER
+      },
+      to,
+      subject,
+      text: message,
+      attachments: attachment ? [
+        {
+          filename: attachment.originalname,
+          path: attachment.path
+        }
+      ] : []
+    };
+
+    console.log('Sending email with options:', {
+      to: mailOptions.to,
+      subject: mailOptions.subject,
+      hasAttachment: !!attachment
+    });
+
+    // Verify connection configuration
+    await transporter.verify();
+    console.log('SMTP connection verified successfully');
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email sent successfully:', {
+      messageId: info.messageId,
+      response: info.response
+    });
+    
+    return true;
+  } catch (error) {
+    console.error('Error in sendRealEmail:', error);
+    if (error.code === 'EAUTH') {
+      console.error('Authentication failed. Please check your email credentials.');
+    }
+    throw error;
+  }
+};
+
 // Mock function to simulate sending a purchase order via email
-const sendPurchaseOrderEmail = (req, res) => {
+const sendPurchaseOrderEmail = async (req, res) => {
   const { poId, to, subject, message } = req.body;
   
-  console.log('\n📧 MOCK EMAIL SENT 📧');
+  console.log('\n📧 ATTEMPTING TO SEND REAL EMAIL 📧');
   console.log('----------------------------------');
   console.log(`🆔 PO ID: ${poId}`);
   console.log(`📤 To: ${to}`);
@@ -18,60 +107,85 @@ const sendPurchaseOrderEmail = (req, res) => {
   console.log(message);
   console.log('----------------------------------\n');
   
-  // Simulate some delay
-  setTimeout(() => {
-    res.status(200).json({
-      success: true,
-      message: 'Purchase order email sent successfully (mock)',
-      data: {
-        poId,
-        to,
-        subject,
-        timestamp: new Date().toISOString()
-      }
+  try {
+    const emailSent = await sendRealEmail(to, subject, message);
+    
+    if (emailSent) {
+      res.status(200).json({
+        success: true,
+        message: 'Purchase order email sent successfully',
+        data: {
+          poId,
+          to,
+          subject,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } else {
+      throw new Error('Failed to send email');
+    }
+  } catch (error) {
+    console.error('Error sending email:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send email',
+      error: error.message
     });
-  }, 500);
+  }
 };
 
 // Mock function to simulate sending a purchase order with a PDF attachment
-const sendPurchaseOrderWithPdf = (req, res) => {
+const sendPurchaseOrderWithPdf = async (req, res) => {
   const { poId, to, subject, message } = req.body;
   const pdfFile = req.file;
   
-  console.log('\n📧 MOCK EMAIL WITH ATTACHMENT SENT 📧');
+  console.log('\n📧 ATTEMPTING TO SEND REAL EMAIL WITH ATTACHMENT 📧');
   console.log('----------------------------------');
-  console.log(`🆔 PO ID: ${poId}`);
+  console.log(`🆔 PO ID: ${poId || 'Not provided'}`);
   console.log(`📤 To: ${to}`);
   console.log(`📑 Subject: ${subject}`);
   
   if (pdfFile) {
     console.log(`📎 Attachment: ${pdfFile.originalname} (${pdfFile.size} bytes)`);
+    console.log(`📂 File saved at: ${pdfFile.path}`);
   } else {
     console.log('⚠️ No PDF attachment found');
+    return res.status(400).json({
+      success: false,
+      message: 'No PDF attachment provided'
+    });
   }
   
-  console.log('📝 Message:');
-  console.log(message);
-  console.log('----------------------------------\n');
-  
-  // Simulate some delay
-  setTimeout(() => {
-    res.status(200).json({
-      success: true,
-      message: 'Purchase order email with PDF sent successfully (mock)',
-      data: {
-        poId,
-        to,
-        subject,
-        attachment: pdfFile ? {
-          name: pdfFile.originalname,
-          size: pdfFile.size,
-          type: pdfFile.mimetype
-        } : null,
-        timestamp: new Date().toISOString()
-      }
+  try {
+    const emailSent = await sendRealEmail(to, subject, message, pdfFile);
+    
+    if (emailSent) {
+      res.status(200).json({
+        success: true,
+        message: 'Purchase order email with PDF sent successfully',
+        data: {
+          poId: poId || 'unknown',
+          to,
+          subject,
+          attachment: {
+            name: pdfFile.originalname,
+            size: pdfFile.size,
+            type: pdfFile.mimetype
+          },
+          timestamp: new Date().toISOString()
+        }
+      });
+    } else {
+      throw new Error('Failed to send email with attachment');
+    }
+  } catch (error) {
+    console.error('Error sending email with attachment:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send email with attachment',
+      error: error.message
     });
-  }, 800);
+  }
 };
 
 // Mock function to check for emails

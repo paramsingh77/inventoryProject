@@ -6,6 +6,7 @@ import { NotificationProvider } from './context/NotificationContext';
 import { PurchaseOrderProvider } from './context/PurchaseOrderContext';
 import PrivateRoute from './components/Auth/PrivateRoute';
 import Login from './pages/Auth/Login';
+import Logout from './components/Auth/Logout';
 import Dashboard from './pages/Dashboard';
 import Sites from './pages/Sites';
 import Inventory from './pages/Inventory';
@@ -13,7 +14,6 @@ import InventoryManagement from './pages/InventoryManagement';
 import Users from './pages/Users';
 import Orders from './pages/Orders';
 import Suppliers from './pages/Suppliers';
-import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import MainLayout from './components/Layout/MainLayout';
 import { addTestButton } from './utils/testWorkflow';
@@ -27,6 +27,19 @@ import AppRoutes from './routes';
 import Layout from './components/Layout';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/main.scss';
+import OrderHistory from './components/Orders/PurchaseOrders/OrderHistory';
+import ProtectedRoute from './components/Auth/ProtectedRoute';
+import PageLayout from './components/Layout/PageLayout';
+import MockUserManagement from './pages/MockUserManagement';
+import SiteDetails from './components/Sites/SiteDetails';
+import NotFound from './pages/NotFound';
+import Unauthorized from './pages/Unauthorized';
+import ApiTest from './pages/ApiTest';
+import { SiteProvider } from './context/SiteContext';
+import SitesList from './components/Sites/SitesList';
+import SiteDashboard from './components/Dashboard/SiteDashboard';
+import { SafeSiteProvider } from './contexts/SafeSiteContext';
+import OrdersTabsWrapper from './components/Orders/OrdersTabsWrapper';
 
 const App = () => {
     useEffect(() => {
@@ -43,87 +56,141 @@ const App = () => {
         }
     }, []);
 
+    // Add this effect to synchronize site selection across the app
+    useEffect(() => {
+        const syncSiteSelection = () => {
+            const currentSite = localStorage.getItem('selectedSiteName');
+            if (currentSite) {
+                console.log("App-level site synchronization:", currentSite);
+                // Dispatch events to notify all components
+                window.dispatchEvent(new Event('storage'));
+                window.dispatchEvent(new CustomEvent('siteChanged', { 
+                    detail: { siteName: currentSite } 
+                }));
+            }
+        };
+        
+        // Run once on app initialization
+        syncSiteSelection();
+        
+        // Set up interval to check periodically (optional)
+        const intervalId = setInterval(syncSiteSelection, 2000);
+        
+        return () => clearInterval(intervalId);
+    }, []);
+
     return (
-        <ThemeProvider>
-            <AuthProvider>
-                <NotificationProvider>
-                    <PurchaseOrderProvider>
-                        <Router>
-                            <Container fluid className="p-4">
-                                <Routes>
-                                    {/* Public Routes */}
-                                    <Route path="/login" element={<Login />} />
+        <Router>
+            <ThemeProvider>
+                <AuthProvider>
+                    <SiteProvider>
+                        <NotificationProvider>
+                            <SafeSiteProvider>
+                                <PurchaseOrderProvider>
+                                    <Container fluid className="p-4">
+                                        <Routes>
+                                            {/* Public Routes */}
+                                            <Route path="/login" element={<Login />} />
+                                            <Route path="/logout" element={<Logout />} />
 
-                                    {/* Private Routes */}
-                                    <Route path="/" element={<PrivateRoute />}>
-                                        <Route index element={<Navigate to="/sites" replace />} />
-                                        <Route path="sites" element={<Sites />} />
-                                        <Route path="dashboard" element={
-                                            <MainLayout>
-                                                <Dashboard />
-                                            </MainLayout>
-                                        } />
-                                        <Route path="inventory" element={
-                                            <MainLayout>
-                                                <Inventory />
-                                            </MainLayout>
-                                        } />
-                                        <Route path="inventory/:siteName" element={
-                                            <MainLayout>
-                                                <InventoryManagement />
-                                            </MainLayout>
-                                        } />
-                                        <Route path="inventory/:siteName/inventory" element={
-                                            <MainLayout>
-                                                <InventoryManagement />
-                                            </MainLayout>
-                                        } />
-                                        <Route path="users" element={
-                                            <MainLayout>
-                                                <Users />
-                                            </MainLayout>
-                                        } />
-                                        <Route path="orders" element={
-                                            <MainLayout>
-                                                <Orders />
-                                            </MainLayout>
-                                        } />
-                                        <Route path="orders/:orderId/track" element={
-                                            <MainLayout>
-                                                <OrderTrackingCard />
-                                            </MainLayout>
-                                        } />
-                                        <Route path="invoices/*" element={
-                                            <MainLayout>
-                                                <InvoiceRoutes />
-                                            </MainLayout>
-                                        } />
-                                        <Route path="suppliers" element={
-                                            <MainLayout>
-                                                <Suppliers />
-                                            </MainLayout>
-                                        } />
-                                        <Route path="reports" element={
-                                            <MainLayout>
-                                                <Reports />
-                                            </MainLayout>
-                                        } />
-                                        <Route path="settings" element={
-                                            <MainLayout>
-                                                <Settings />
-                                            </MainLayout>
-                                        } />
-                                    </Route>
+                                            {/* Private Routes */}
+                                            <Route path="/" element={<PrivateRoute />}>
+                                                <Route index element={<Navigate to="/sites" replace />} />
+                                                <Route path="sites" element={
+                                                    <ProtectedRoute requiredRole="admin">
+                                                        <SitesList />
+                                                    </ProtectedRoute>
+                                                } />
+                                                <Route path="sites/:siteName" element={
+                                                    <ProtectedRoute>
+                                                        <SiteDashboard />
+                                                    </ProtectedRoute>
+                                                } />
+                                                <Route path="dashboard" element={
+                                                    <MainLayout>
+                                                        <SiteDashboard />
+                                                    </MainLayout>
+                                                } />
+                                                <Route path="inventory" element={
+                                                    <ProtectedRoute>
+                                                        <Inventory />
+                                                    </ProtectedRoute>
+                                                } />
+                                                <Route path="inventory/:siteName" element={
+                                                    <MainLayout>
+                                                        <InventoryManagement />
+                                                    </MainLayout>
+                                                } />
+                                                <Route path="inventory/:siteName/inventory" element={
+                                                    <MainLayout>
+                                                        <InventoryManagement />
+                                                    </MainLayout>
+                                                } />
+                                                <Route path="inventory/:siteName/orders" element={
+                                                    <MainLayout>
+                                                        <OrdersTabsWrapper />
+                                                    </MainLayout>
+                                                } />
+                                                <Route path="users" element={
+                                                    <ProtectedRoute requiredRole="admin">
+                                                        <PageLayout>
+                                                            <Users />
+                                                        </PageLayout>
+                                                    </ProtectedRoute>
+                                                } />
+                                                <Route path="orders" element={
+                                                    <MainLayout>
+                                                        <Orders />
+                                                    </MainLayout>
+                                                } />
+                                                <Route path="orders/:orderId/track" element={
+                                                    <MainLayout>
+                                                        <OrderTrackingCard />
+                                                    </MainLayout>
+                                                } />
+                                                <Route path="invoices/*" element={
+                                                    <MainLayout>
+                                                        <InvoiceRoutes />
+                                                    </MainLayout>
+                                                } />
+                                                <Route path="suppliers" element={
+                                                    <MainLayout>
+                                                        <Suppliers />
+                                                    </MainLayout>
+                                                } />
+                                                <Route path="settings" element={
+                                                    <MainLayout>
+                                                        <Settings />
+                                                    </MainLayout>
+                                                } />
+                                                <Route path="order-history" element={<OrderHistory />} />
+                                                <Route path="mock-users" element={
+                                                    <ProtectedRoute>
+                                                        <PageLayout>
+                                                            <MockUserManagement />
+                                                        </PageLayout>
+                                                    </ProtectedRoute>
+                                                } />
+                                            </Route>
 
-                                    {/* Catch all route */}
-                                    <Route path="*" element={<Navigate to="/sites" replace />} />
-                                </Routes>
-                            </Container>
-                        </Router>
-                    </PurchaseOrderProvider>
-                </NotificationProvider>
-            </AuthProvider>
-        </ThemeProvider>
+                                            {/* Error routes */}
+                                            <Route path="/unauthorized" element={<Unauthorized />} />
+                                            <Route path="/not-found" element={<NotFound />} />
+
+                                            {/* API test route */}
+                                            <Route path="/api-test" element={<ApiTest />} />
+
+                                            {/* Catch all route */}
+                                            <Route path="*" element={<Navigate to="/not-found" replace />} />
+                                        </Routes>
+                                    </Container>
+                                </PurchaseOrderProvider>
+                            </SafeSiteProvider>
+                        </NotificationProvider>
+                    </SiteProvider>
+                </AuthProvider>
+            </ThemeProvider>
+        </Router>
     );
 };
 

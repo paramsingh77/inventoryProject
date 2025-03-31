@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import api from '../utils/api';
 
 const AuthContext = createContext(null);
 const API_URL = 'http://localhost:2000/api';
@@ -19,146 +20,113 @@ export const AuthProvider = ({ children }) => {
     const navigate = useNavigate();
 
     useEffect(() => {
-        checkAuth();
-    }, []);
-
-    const checkAuth = async () => {
-        try {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                setLoading(false);
-                return;
-            }
-
-            const response = await fetch(`${API_URL}/auth/verify`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            const contentType = response.headers.get('content-type');
-            if (!contentType || !contentType.includes('application/json')) {
-                throw new Error('Invalid server response');
-            }
-
-            const data = await response.json();
-            
-            if (!response.ok) {
-                if (response.status === 401) {
-                    // Token expired or invalid
-                    localStorage.removeItem('token');
+        const checkLoggedIn = async () => {
+            try {
+                setLoading(true);
+                const token = localStorage.getItem('token');
+                
+                if (!token) {
+                    console.log('No token found in localStorage');
                     setUser(null);
-                    navigate('/login');
-                    throw new Error('Session expired. Please login again.');
+                    setLoading(false);
+                    return;
                 }
-                throw new Error(data.message || 'Authentication failed');
+                
+                // Create user object from localStorage
+                const userId = localStorage.getItem('userId');
+                const username = localStorage.getItem('username');
+                const userEmail = localStorage.getItem('userEmail');
+                const userRole = localStorage.getItem('userRole');
+                const assignedSite = localStorage.getItem('assignedSite');
+                
+                if (userId && username && userRole) {
+                    const userData = {
+                        id: userId,
+                        username,
+                        email: userEmail || '',
+                        role: userRole,
+                        assigned_site: assignedSite || ''
+                    };
+                    
+                    console.log('User restored from localStorage:', userData);
+                    setUser(userData);
+                } else {
+                    console.log('Incomplete user data in localStorage');
+                    setUser(null);
+                }
+                
+                setLoading(false);
+            } catch (error) {
+                console.error('Error checking login status:', error);
+                setUser(null);
+                setLoading(false);
             }
-
-            setUser(data.user);
-            setError(null);
-
-            // Redirect based on user role
-            if (data.user.role === 'admin') {
-                navigate('/sites');
-            } else {
-                navigate('/dashboard');
-            }
-        } catch (error) {
-            console.error('Auth check failed:', error);
-            localStorage.removeItem('token');
-            setUser(null);
-        } finally {
-            setLoading(false);
-        }
-    };
+        };
+        
+        checkLoggedIn();
+    }, []);
 
     const login = async (username, password) => {
         try {
             setLoading(true);
             setError(null);
-
-            // Try to connect to the actual backend
+            
+            // Use a try-catch with proper error handling
             try {
-                const response = await fetch(`${API_URL}/auth/login`, {
+                const response = await fetch('http://localhost:2000/api/auth/login', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
+                        'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ username, password }),
-                    // Add timeout to prevent hanging
-                    timeout: 5000
+                    body: JSON.stringify({ username, password })
                 });
-
+                
+                // Check if the response is JSON
                 const contentType = response.headers.get('content-type');
                 if (!contentType || !contentType.includes('application/json')) {
-                    throw new Error('Invalid server response');
+                    throw new Error('Server returned non-JSON response. The server may be misconfigured.');
                 }
-
+                
                 const data = await response.json();
-
+                
                 if (!response.ok) {
-                    throw new Error(data.message || 'Login failed');
+                    throw new Error(data.error || `Server error: ${response.status}`);
                 }
-
+                
+                // Store token and user data
                 localStorage.setItem('token', data.token);
-                setUser(data.user);
-                setError(null);
+                localStorage.setItem('userId', data.user.id);
+                localStorage.setItem('username', data.user.username);
+                localStorage.setItem('userEmail', data.user.email || '');
+                localStorage.setItem('userRole', data.user.role);
+                localStorage.setItem('assignedSite', data.user.assigned_site || '');
                 
-                // Redirect based on user role
-                if (data.user.role === 'admin') {
-                    navigate('/sites');
-                } else {
-                    navigate('/dashboard');
-                }
-
-                return { success: true };
-            } catch (error) {
-                console.warn('API login failed, using development fallback:', error);
+                // Set user in state
+                setUser({
+                    id: data.user.id,
+                    username: data.user.username,
+                    email: data.user.email,
+                    role: data.user.role,
+                    assigned_site: data.user.assigned_site
+                });
                 
-                // DEVELOPMENT FALLBACK - remove in production
-                if (process.env.NODE_ENV === 'development') {
-                    // Check for common test credentials
-                    if ((username === 'admin' && password === 'admin123') || 
-                        (username === 'user' && password === 'user123')) {
-                        
-                        // Create mock user and token
-                        const role = username === 'admin' ? 'admin' : 'user';
-                        const mockToken = 'dev-token-' + Math.random().toString(36).substring(2);
-                        const mockUser = {
-                            id: username === 'admin' ? 1 : 2,
-                            username,
-                            email: `${username}@example.com`,
-                            role
-                        };
-                        
-                        // Store mock auth data
-                        localStorage.setItem('token', mockToken);
-                        localStorage.setItem('userRole', role);
-                        localStorage.setItem('username', username);
-                        
-                        setUser(mockUser);
-                        
-                        // Redirect based on role
-                        if (role === 'admin') {
-                            navigate('/sites');
-                        } else {
-                            navigate('/dashboard');
-                        }
-                        
-                        return { success: true };
-                    } else {
-                        throw new Error('Invalid credentials (dev mode)');
-                    }
-                } else {
-                    // In production, pass through the original error
-                    throw error;
+                return data;
+            } catch (fetchError) {
+                // Check if this is a network error (server down)
+                if (fetchError.message && fetchError.message.includes('NetworkError')) {
+                    throw new Error('Cannot connect to the server. Please try again later.');
                 }
+                // Check if this is a CORS error
+                if (fetchError.message && fetchError.message.includes('CORS')) {
+                    throw new Error('Cross-origin request blocked. Please check server configuration.');
+                }
+                
+                throw fetchError;
             }
         } catch (error) {
             console.error('Login error:', error);
-            setError(error.message);
-            return { success: false, error: error.message };
+            setError(error.message || 'Failed to login');
+            throw error;
         } finally {
             setLoading(false);
         }
@@ -166,30 +134,45 @@ export const AuthProvider = ({ children }) => {
 
     const logout = async () => {
         try {
-            setLoading(true);
-            const token = localStorage.getItem('token');
-            if (token) {
-                const response = await fetch(`${API_URL}/auth/logout`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error('Logout failed');
-                }
-            }
-        } catch (error) {
-            console.error('Logout error:', error);
-            setError(error.message);
-        } finally {
-            localStorage.removeItem('token');
+            console.log('AuthContext: Logging out user');
+            
+            // Clear user data
             setUser(null);
-            setLoading(false);
-            navigate('/login');
+            
+            // Clear token from localStorage
+            localStorage.removeItem('token');
+            
+            // Clear any other auth-related data
+            localStorage.removeItem('user');
+            localStorage.removeItem('userRole');
+            localStorage.removeItem('userId');
+            localStorage.removeItem('username');
+            localStorage.removeItem('userEmail');
+            localStorage.removeItem('lastSelectedSite');
+            
+            console.log('AuthContext: User logged out successfully');
+            return true;
+        } catch (error) {
+            console.error('AuthContext: Error during logout:', error);
+            throw error;
         }
+    };
+
+    const checkSiteAccess = (siteName) => {
+        if (!user) return false;
+        if (user.role === 'admin') return true;
+        return user.assigned_site === siteName;
+    };
+
+    const directLogout = () => {
+        // Clear all auth state
+        setUser(null);
+        
+        // Clear all localStorage
+        localStorage.clear();
+        
+        // Force a hard redirect to login
+        window.location.href = '/login';
     };
 
     const value = {
@@ -197,8 +180,10 @@ export const AuthProvider = ({ children }) => {
         loading,
         login,
         logout,
+        directLogout,
         error,
-        setError
+        setError,
+        checkSiteAccess
     };
 
     return (

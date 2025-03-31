@@ -1,23 +1,36 @@
-import React, { useEffect, useState } from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import React from 'react';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
-const PrivateRoute = () => {
+const PrivateRoute = ({ children }) => {
     const { user, loading } = useAuth();
-    const [isDevelopmentBypass, setIsDevelopmentBypass] = useState(false);
+    const location = useLocation();
+    
+    console.log('PrivateRoute - User:', user);
+    console.log('PrivateRoute - Current location:', location.pathname);
 
-    // For development mode only - check local storage directly as a fallback
-    useEffect(() => {
-        if (process.env.NODE_ENV === 'development' && !user) {
-            const hasToken = localStorage.getItem('token');
-            const hasUserRole = localStorage.getItem('userRole');
-            
-            if (hasToken && hasUserRole) {
-                console.log('Development mode: Using localStorage auth data');
-                setIsDevelopmentBypass(true);
+    const token = localStorage.getItem('token');
+    const isAuthenticated = !!token;
+
+    // Add token refresh logic if needed
+    const refreshToken = async () => {
+        try {
+            const response = await fetch('/api/auth/refresh', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                localStorage.setItem('token', data.token);
+                return true;
             }
+        } catch (error) {
+            console.error('Token refresh failed:', error);
         }
-    }, [user]);
+        return false;
+    };
 
     if (loading) {
         return (
@@ -29,8 +42,13 @@ const PrivateRoute = () => {
         );
     }
 
-    // Allow access if we have a user OR we're in development mode with a token
-    return (user || isDevelopmentBypass) ? <Outlet /> : <Navigate to="/login" />;
+    if (!isAuthenticated) {
+        console.log('No user found, redirecting to login');
+        return <Navigate to="/login" state={{ from: location }} replace />;
+    }
+
+    console.log('User authenticated, rendering outlet');
+    return <Outlet />;
 };
 
 export default PrivateRoute; 

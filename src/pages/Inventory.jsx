@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button } from 'react-bootstrap';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -50,6 +50,9 @@ const InventoryCard = ({ title, icon, description, onClick }) => {
 const Inventory = () => {
   const [activeModule, setActiveModule] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [inventoryData, setInventoryData] = useState([]);
+  const [selectedSite, setSelectedSite] = useState('');
+  const [user, setUser] = useState(null);
 
   const inventoryModules = [
     {
@@ -76,14 +79,14 @@ const Inventory = () => {
       component: StockAlerts,
       stats: { value: '15', label: 'Active Alerts' }
     },
-    {
-      id: 'reports',
-      title: 'Generate Reports',
-      icon: faFileAlt,
-      description: 'Create and download detailed inventory reports',
-      component: GenerateReports,
-      stats: { value: '45', label: 'Reports Generated' }
-    }
+    // {
+    //   id: 'reports',
+    //   title: 'Generate Reports',
+    //   icon: faFileAlt,
+    //   description: 'Create and download detailed inventory reports',
+    //   component: GenerateReports,
+    //   stats: { value: '45', label: 'Reports Generated' }
+    // }
   ];
 
   const handleModuleClick = (moduleId) => {
@@ -98,6 +101,62 @@ const Inventory = () => {
     module.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     module.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  useEffect(() => {
+    // Get the current user from localStorage or context
+    const userRole = localStorage.getItem('userRole');
+    const assignedSite = localStorage.getItem('assignedSite');
+    
+    setUser({
+      role: userRole,
+      assigned_site: assignedSite
+    });
+    
+    // Set the selected site based on user role
+    if (userRole === 'admin') {
+      // Admin can select any site, but we'll default to the first one
+      setSelectedSite('');
+    } else {
+      // Regular users are locked to their assigned site
+      setSelectedSite(assignedSite);
+    }
+    
+    // Initial data fetch
+    fetchInventory();
+  }, []);
+
+  const fetchInventory = async () => {
+    try {
+      const siteToFetch = user?.role === 'admin' 
+        ? selectedSite // Admin can select site
+        : user?.assigned_site; // Regular user is locked to their site
+        
+      // Fetch inventory for the appropriate site
+      const siteParam = siteToFetch ? `?site=${siteToFetch}` : '';
+      const response = await fetch(`http://localhost:2000/api/inventory${siteParam}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch inventory data');
+      }
+      
+      const data = await response.json();
+      setInventoryData(data);
+    } catch (error) {
+      console.error('Error fetching inventory:', error);
+      // Don't use mock data, just set an empty array
+      setInventoryData([]);
+    }
+  };
+
+  // Add this function to provide mock inventory data as fallback
+  const getMockInventoryData = () => {
+    return []; // Return an empty array instead of mock data since you want to use real data
+  };
 
   return (
     <NotificationProvider>
@@ -201,7 +260,7 @@ const Inventory = () => {
               </Button>
               {(() => {
                 const ModuleComponent = inventoryModules.find(m => m.id === activeModule)?.component;
-                return ModuleComponent ? <ModuleComponent /> : null;
+                return ModuleComponent ? <ModuleComponent data={inventoryData} /> : null;
               })()}
             </motion.div>
           )}

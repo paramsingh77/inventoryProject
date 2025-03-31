@@ -1,0 +1,67 @@
+.tracking-card-container {
+  margin-bottom: 1.5rem;
+}
+
+.tracking-card {
+  border-radius: 12px;
+  border: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.tracking-card:hover {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.tracking-status-badge {
+  font-size: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 20px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+.tracking-info-list .list-group-item {
+  border: none;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.tracking-info-list .list-group-item:first-child {
+  padding-top: 0;
+}
+
+.tracking-info-label {
+  font-size: 0.85rem;
+  color: #6c757d;
+  margin-bottom: 0.35rem;
+  font-weight: 500;
+}
+
+.tracking-info-value {
+  color: #2d3436;
+  font-weight: 400;
+}
+
+.tracking-item {
+  padding: 0.35rem 0;
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
+}
+
+.tracking-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.tracking-item span {
+  font-size: 0.9rem;
+}
+
+.card-footer {
+  padding: 1rem;
+}
+
+.card-footer small {
+  font-size: 0.8rem;
+} 

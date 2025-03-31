@@ -8,7 +8,7 @@ import axios from 'axios';
 // Configure axios defaults
 const api = axios.create({
   baseURL: process.env.REACT_APP_API_URL || 'http://localhost:2000',
-  timeout: 15000,
+  timeout: 10000,
   headers: {
     'Content-Type': 'application/json'
   }
@@ -17,18 +17,16 @@ const api = axios.create({
 // Request interceptor for adding auth token
 api.interceptors.request.use(
   (config) => {
-    // Ensure URL always has /api/ prefix
-    if (config.url && !config.url.includes('/api/') && !config.url.startsWith('http')) {
-      config.url = config.url.startsWith('/') ? `/api${config.url}` : `/api/${config.url}`;
-    }
-    
     // Get token from localStorage if needed
     const token = localStorage.getItem('token');
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      config.headers['Authorization'] = `Bearer ${token}`;
     }
+
+    // Log the full URL being requested
+    const fullUrl = `${config.baseURL}${config.url}`;
+    console.log('API Request:', config.method?.toUpperCase(), fullUrl);
     
-    console.log('API Request:', config.method, config.url);
     return config;
   },
   (error) => {
@@ -40,11 +38,29 @@ api.interceptors.request.use(
 // Response interceptor for error handling
 api.interceptors.response.use(
   (response) => {
-    console.log('API Response:', response.status, response.config.url);
+    console.log('API Response Success:', {
+      status: response.status,
+      url: response.config.url,
+      method: response.config.method?.toUpperCase()
+    });
     return response;
   },
   (error) => {
-    console.error('API Response Error:', error.response?.status || 'No Status', error.config?.url);
+    if (error.response) {
+      console.error('API Response Error:', {
+        status: error.response.status,
+        url: error.config?.url,
+        data: error.response.data,
+        method: error.config?.method?.toUpperCase()
+      });
+    } else if (error.request) {
+      console.error('API Request Error: No response received', {
+        url: error.config?.url,
+        method: error.config?.method?.toUpperCase()
+      });
+    } else {
+      console.error('API Error:', error.message);
+    }
     return Promise.reject(error);
   }
 );

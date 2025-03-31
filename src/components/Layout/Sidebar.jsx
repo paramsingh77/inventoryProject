@@ -19,7 +19,6 @@ const Sidebar = () => {
     { path: '/users', icon: faUsers},
     { path: '/orders', icon: faShoppingCart},
     { path: '/suppliers', icon: faTruck },
-    { path: '/reports', icon: faChartLine},
     { path: '/settings', icon: faCog },
   ];
 

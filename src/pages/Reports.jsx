@@ -4,7 +4,7 @@ const Reports = () => {
   return (
     <div>
       <h2>Reports</h2>
-      <p>Reports and analytics content will go here.</p>
+      <p>Reports and analytics concxftent will go here.</p>
     </div>
   );
 };

@@ -14,12 +14,21 @@ import Inventory from './pages/Inventory';
 import Users from './pages/Users';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
-
+import OrderAnalyticsWrapper from './components/Orders/OrderAnalyticsWrapper';
+import { SiteProvider } from './context/SiteContext';
+import SitePage from './pages/SitePage';
+import UserLayout from './components/Layout/UserLayout';
+import UserInventoryView from './pages/UserInventoryView';
+import RoleBasedSiteRouter from './components/RoleBasedSiteRouter';
+import EmailLogin from './components/Email-Login/EmailLoginUser';
+import EmailLoginAdmin from './components/Email-Login/EmailLoginAdmin';
+import EmailLoginUser from './components/Email-Login/EmailLoginUser';
 function App() {
   return (
     <Router>
       <AuthProvider>
         <NotificationProvider>
+          <SiteProvider>
           <div style={{ fontFamily: 'Afacad, sans-serif' }}>
             <Routes>
               {/* Public Routes */}
@@ -82,10 +91,21 @@ function App() {
                 </MainLayout>
               } />
               
+              {/* Site-Specific Page */}
+              <Route path="/sites/:siteName" element={<RoleBasedSiteRouter />} />
+              
               {/* Default Route */}
               <Route path="/" element={<Login />} />
+            
+              <Route path="/otp" element={<EmailLogin />} />
+              <Route path="/otp/admin" element={<EmailLoginAdmin />} />
+              <Route path="/otp/user" element={<EmailLoginUser />} />
+              <Route path="/authenticate/user/session/:token" element={<EmailLoginUser />} />
+              <Route path="/authenticate/admin/session/:token" element={<EmailLoginAdmin />} />
             </Routes>
           </div>
+          </SiteProvider>
+            
         </NotificationProvider>
       </AuthProvider>
     </Router>

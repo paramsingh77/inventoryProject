@@ -11,10 +11,14 @@ import {
     faFileExport,
     faFileImport
 } from '@fortawesome/free-solid-svg-icons';
-import { useLocation, useParams } from 'react-router-dom';
+import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import ProductList from '../components/Inventory/ProductList';
 import ImportDevices from '../components/Inventory/ImportDevices';
+import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
+import api from '../api/api-es';
+import SiteOrders from '../components/Orders/SiteOrders';
 
 const InventoryManagement = () => {
     const [selectedSite, setSelectedSite] = useState(null);
@@ -22,107 +26,136 @@ const InventoryManagement = () => {
     const [loading, setLoading] = useState(true);
     const location = useLocation();
     const { siteName } = useParams();
+    const [deviceStats, setDeviceStats] = useState({
+        total: 0,
+        active: 0,
+        offline: 0,
+        pending: 0,
+        recent: 0
+    });
+    const { user } = useAuth();
+    const { addNotification } = useNotification();
+    const navigate = useNavigate();
     
+    // Process site name from URL parameters
     useEffect(() => {
         console.log("Route params siteName:", siteName);
         console.log("Location state:", location.state);
         
-        // Method 1: Try to get site data from location state
-        const siteData = location.state;
-        
-        if (siteData && siteData.siteName) {
-            console.log("Using site data from location.state", siteData);
-            setSelectedSite(siteData);
-            fetchSiteInventory(siteData.siteName);
-            
-            // Store this site as the last selected one
-            localStorage.setItem('lastSelectedSite', JSON.stringify({
-                siteName: siteData.siteName,
-                siteLocation: siteData.siteLocation || 'No location'
-            }));
-        } 
-        // Method 2: Use the URL parameter if available
-        else if (siteName) {
-            console.log("Using siteName from URL:", siteName);
+        if (siteName) {
             const decodedSiteName = decodeURIComponent(siteName);
+            console.log("Decoded site name:", decodedSiteName);
             
-            // Check if we have this site in localStorage
-            const lastSelectedSite = localStorage.getItem('lastSelectedSite');
-            if (lastSelectedSite) {
-                try {
-                    const storedSiteData = JSON.parse(lastSelectedSite);
-                    if (storedSiteData.siteName === decodedSiteName) {
-                        setSelectedSite(storedSiteData);
-                    } else {
-                        setSelectedSite({ 
-                            siteName: decodedSiteName,
-                            siteLocation: 'Location not available'
-                        });
-                    }
-                } catch (e) {
-                    console.error("Error parsing stored site data:", e);
-                    setSelectedSite({ 
-                        siteName: decodedSiteName,
-                        siteLocation: 'Location not available'
-                    });
-                }
-            } else {
-                setSelectedSite({ 
-                    siteName: decodedSiteName,
-                    siteLocation: 'Location not available'
-                });
-            }
+            setSelectedSite({ 
+                siteName: decodedSiteName,
+                siteLocation: 'Modesto' // Or get this from your data
+            });
             
-            fetchSiteInventory(decodedSiteName);
+            // Don't fetch data here - it will use the old state value
         }
     }, [location, siteName]);
+    
+    // Fetch data when selectedSite changes
+    useEffect(() => {
+        if (selectedSite?.siteName) {
+            console.log("Selected site changed:", selectedSite.siteName);
+            fetchInventoryData(selectedSite.siteName);
+            fetchDeviceStats(selectedSite.siteName);
+        }
+    }, [selectedSite]);
 
-    const fetchSiteInventory = async (siteName) => {
+    // Permission check
+    useEffect(() => {
+        // If not admin and site doesn't match assigned site, redirect
+        if (
+            siteName && 
+            user && 
+            user.role !== 'admin' && 
+            user.assigned_site !== siteName
+        ) {
+            addNotification('error', 'You do not have access to this site');
+            navigate('/inventory');
+        }
+    }, [siteName, user, navigate, addNotification]);
+
+    // Update fetchInventoryData to accept the site name parameter
+    const fetchInventoryData = async (siteNameParam) => {
+        const siteToUse = siteNameParam || selectedSite?.siteName;
+        
+        if (!siteToUse) {
+            console.error("No site name provided for inventory fetch");
+            setLoading(false);
+            return;
+        }
+        
         try {
-            const token = localStorage.getItem('token');
-            const response = await fetch(`http://localhost:2000/api/devices/site/${siteName}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            const data = await response.json();
-            setInventory(data);
+            console.log(`Fetching inventory for site: ${siteToUse}`);
+            const response = await api.get(`/api/devices/site/${siteToUse}/devices`);
+            console.log("Inventory response:", response.data);
+            
+            // Handle both possible response formats
+            if (Array.isArray(response.data)) {
+                setInventory(response.data);
+            } else if (response.data && Array.isArray(response.data.devices)) {
+                setInventory(response.data.devices);
+            } else {
+                setInventory([]);
+                console.warn("Unexpected response format:", response.data);
+            }
+            
             setLoading(false);
         } catch (error) {
-            console.error('Error fetching inventory:', error);
+            console.error('Error fetching inventory data:', error);
             setLoading(false);
+        }
+    };
+    
+    // Similarly update fetchDeviceStats
+    const fetchDeviceStats = async (siteNameParam) => {
+        const siteToUse = siteNameParam || selectedSite?.siteName;
+        
+        if (!siteToUse) {
+            return;
+        }
+        
+        try {
+            const response = await api.get(`/api/devices/site-stats/${siteToUse}`);
+            if (response.data) {
+                setDeviceStats(response.data);
+            }
+        } catch (error) {
+            console.error('Error fetching device stats:', error);
         }
     };
 
     const stats = [
         {
             title: 'Total Devices',
-            value: inventory.length,
+            value: deviceStats.total,
             icon: faBoxes,
             color: 'primary'
         },
         {
             title: 'Active Devices',
-            value: inventory.filter(device => device.last_seen === 'Currently Online').length,
+            value: deviceStats.active,
             icon: faChartLine,
             color: 'success'
         },
         {
             title: 'Offline Devices',
-            value: inventory.filter(device => device.last_seen !== 'Currently Online').length,
+            value: deviceStats.offline,
             icon: faExclamationTriangle,
             color: 'danger'
         },
         {
             title: 'Pending Updates',
-            value: '5',
+            value: deviceStats.pending,
             icon: faShoppingCart,
             color: 'warning'
         },
         {
             title: 'Recent Activity',
-            value: '12',
+            value: deviceStats.recent,
             icon: faHistory,
             color: 'info'
         }
@@ -149,7 +182,7 @@ const InventoryManagement = () => {
                         </Button>
                         <ImportDevices onImportSuccess={() => {
                             if (selectedSite?.siteName) {
-                                fetchSiteInventory(selectedSite.siteName);
+                                fetchInventoryData();
                             }
                         }} />
                         <Button variant="primary">
@@ -161,7 +194,7 @@ const InventoryManagement = () => {
             </Row>
 
             {/* Stats Cards */}
-            <Row className="g-4 mb-4">
+            {/* <Row className="g-4 mb-4">
                 {stats.map((stat, index) => (
                     <Col key={index} md>
                         <motion.div
@@ -189,14 +222,18 @@ const InventoryManagement = () => {
                         </motion.div>
                     </Col>
                 ))}
-            </Row>
+            </Row> */}
 
             {/* Product List Table */}
             <ProductList 
                 devices={inventory}
                 loading={loading}
                 siteName={selectedSite?.siteName}
+                data={inventory}
             />
+
+            {/* Site Orders Component */}
+            {/* <Route path="orders" element={<SiteOrders siteName={siteName} />} /> */}
         </Container>
     );
 };

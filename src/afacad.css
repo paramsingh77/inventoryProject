@@ -1,0 +1,16 @@
+/* Import Afacad font from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Afacad:wght@400;500;600;700&display=swap');
+
+/* Apply Afacad font to body and elements */
+body, 
+.container, 
+.card, 
+.pdf-viewer-container, 
+.modal-content, 
+.pdf-iframe-container,
+.ant-typography,
+.ant-card,
+h1, h2, h3, h4, h5, h6, 
+p, div, span, button {
+  font-family: 'Afacad', sans-serif !important;
+} 

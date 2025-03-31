@@ -1,15 +1,12 @@
-import React from 'react';
-import { Container } from 'react-bootstrap';
-import { PurchaseOrderProvider } from '../context/PurchaseOrderContext';
+import React, { useState, useCallback } from 'react';
+import { Tab, Nav, Container } from 'react-bootstrap';
 import OrdersTabs from '../components/Orders/OrdersTabs';
 
 const Orders = () => {
   return (
-    <PurchaseOrderProvider>
-      <Container fluid className="p-0">
-        <OrdersTabs />
-      </Container>
-    </PurchaseOrderProvider>
+    <Container fluid className="p-0">
+      <OrdersTabs />
+    </Container>
   );
 };
 

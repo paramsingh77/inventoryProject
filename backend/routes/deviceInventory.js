@@ -52,36 +52,82 @@ router.post('/import', upload.single('file'), async (req, res) => {
 
 // Route to import CSV data from an existing file on the server
 router.post('/import-server-file', async (req, res) => {
+    console.log('=== Starting import process ===');
+    console.log('Request body:', req.body);
+    console.log('Request headers:', req.headers);
+    
     try {
-        console.log('Starting server file import process...');
+        const { filePath } = req.body;
         
-        // Default to the aam.csv file if no path is provided
-        const filePath = req.query.path || path.join(__dirname, '../files/aam.csv');
-        
-        if (!fs.existsSync(filePath)) {
+        if (!filePath) {
+            console.error('No file path provided in request body');
             return res.status(400).json({ 
                 success: false, 
-                error: `File not found: ${filePath}` 
+                message: 'No file path provided' 
             });
         }
 
-        console.log('Using file:', filePath);
-        
-        // Create a file object similar to what multer would provide
-        const file = {
-            path: filePath,
-            originalname: path.basename(filePath)
+        console.log('File path from request:', filePath);
+
+        // Resolve the file path relative to the backend directory
+        const absolutePath = path.resolve(__dirname, '..', filePath);
+        console.log('Resolved absolute path:', absolutePath);
+
+        // Check if file exists
+        if (!fs.existsSync(absolutePath)) {
+            console.error(`File not found at path: ${absolutePath}`);
+            return res.status(404).json({ 
+                success: false, 
+                message: `File not found at path: ${absolutePath}` 
+            });
+        }
+
+        console.log('File exists, checking readability...');
+
+        // Check if file is readable
+        try {
+            await fs.promises.access(absolutePath, fs.constants.R_OK);
+        } catch (error) {
+            console.error('File not readable:', error);
+            return res.status(403).json({
+                success: false,
+                message: `File not readable: ${error.message}`
+            });
+        }
+
+        console.log('File is readable, checking size...');
+
+        // Check file size
+        const stats = await fs.promises.stat(absolutePath);
+        if (stats.size === 0) {
+            console.error('File is empty');
+            return res.status(400).json({
+                success: false,
+                message: 'File is empty'
+            });
+        }
+
+        console.log('File size:', stats.size, 'bytes');
+        console.log('Creating file object for import...');
+
+        // Create a file object that matches what importDeviceData expects
+        const fileObj = {
+            path: absolutePath,
+            size: stats.size,
+            originalname: path.basename(absolutePath)
         };
-        
-        const result = await importDeviceData(file);
+
+        console.log('Calling importDeviceData...');
+        const result = await importDeviceData(fileObj);
         console.log('Import result:', result);
-        
-        res.json(result);
+
+        return res.status(200).json(result);
     } catch (error) {
-        console.error('Error in server file import:', error);
-        res.status(500).json({ 
-            success: false,
-            error: error.message || 'Failed to import device data'
+        console.error('Error in import-server-file route:', error);
+        return res.status(500).json({ 
+            success: false, 
+            message: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 });
@@ -341,76 +387,36 @@ router.get('/', async (req, res) => {
     }
 });
 
-// Get all devices
+// Add a fallback route for all devices
 router.get('/all', async (req, res) => {
-    try {
-        const query = `
-            WITH processed_devices AS (
-                SELECT 
-                    id,
-                    site_name,
-                    device_hostname,
-                    device_description,
-                    last_user,
-                    CASE 
-                        WHEN last_seen = 'Currently Online' THEN NOW()
-                        ELSE CAST(last_seen AS TIMESTAMP)
-                    END as last_seen,
-                    device_type,
-                    device_model,
-                    operating_system,
-                    serial_number,
-                    device_cpu,
-                    mac_addresses,
-                    status,
-                    created_at,
-                    updated_at,
-                    last_check_in,
-                    ip_address,
-                    location,
-                    department,
-                    notes
-                FROM device_inventory
-            )
-            SELECT 
-                id,
-                site_name,
-                device_hostname,
-                device_description,
-                last_user,
-                CASE 
-                    WHEN last_seen = NOW() THEN 'Currently Online'
-                    ELSE last_seen::TEXT
-                END as last_seen,
-                device_type,
-                device_model,
-                operating_system,
-                serial_number,
-                device_cpu,
-                mac_addresses,
-                status,
-                created_at,
-                updated_at,
-                last_check_in,
-                ip_address,
-                location,
-                department,
-                notes
-            FROM processed_devices 
-            ORDER BY 
-                CASE WHEN last_seen = NOW() THEN 0 ELSE 1 END,
-                last_seen DESC;
-        `;
-        const { rows } = await pool.query(query);
-        res.json(rows);
-    } catch (error) {
-        console.error('Error fetching devices:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Error fetching devices',
-            error: error.message 
-        });
+  let client;
+  try {
+    client = await pool.connect();
+    
+    // Fetch all devices from the main inventory table
+    const result = await client.query(`
+      SELECT * FROM device_inventory
+      ORDER BY device_hostname ASC
+    `);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching all devices:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching all devices',
+      error: error.message 
+    });
+  } finally {
+    // Only release the client if it was successfully acquired
+    if (client) {
+      try {
+        await client.release();
+      } catch (releaseError) {
+        console.error('Error releasing client:', releaseError);
+      }
     }
+  }
 });
 
 // Get device by ID
@@ -483,6 +489,183 @@ router.put('/:id/status', async (req, res) => {
             error: error.message 
         });
     }
+});
+
+// Add this route to fetch devices by vendor
+router.get('/devices/vendor/:vendorName', async (req, res) => {
+    try {
+        const { vendorName } = req.params;
+        
+        const result = await pool.query(`
+            SELECT *
+            FROM device_inventory
+            WHERE vendor ILIKE $1
+            AND status = 'active'
+            ORDER BY device_model, device_hostname
+        `, [`%${vendorName}%`]);
+
+        console.log(`Found ${result.rows.length} devices for vendor ${vendorName}`);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error fetching vendor devices:', error);
+        res.status(500).json({
+            message: 'Failed to fetch devices',
+            error: error.message
+        });
+    }
+});
+
+// Site-to-table mapping
+const siteToTableMap = {
+  "Dameron Hospital": "dameron_hospital_device_inventory",
+  "Baton Rouge Specialty Hospital": "baton_rouge_specialty_hospital_device_inventory",
+  // Add other mappings as needed
+};
+
+// Route to get devices for a specific site
+router.get('/site/:siteName/devices', async (req, res) => {
+  const { siteName } = req.params;
+  
+  try {
+    // Get the table name from mapping or generate it
+    let tableName = siteToTableMap[siteName];
+    
+    if (!tableName) {
+      // Generate table name from site name if not in mapping
+      const formattedSiteName = siteName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      tableName = `${formattedSiteName}_device_inventory`;
+      console.log(`Generated table name for "${siteName}": ${tableName}`);
+    }
+    
+    console.log(`Fetching devices from table: ${tableName}`);
+    
+    // Check if table exists
+    const tableExists = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = $1
+      );
+    `, [tableName]);
+    
+    if (!tableExists.rows[0].exists) {
+      console.log(`Table ${tableName} does not exist, falling back to device_inventory`);
+      // Fall back to the main device_inventory table with location filter
+      const result = await pool.query(`
+        SELECT * FROM device_inventory
+        WHERE location ILIKE $1
+        ORDER BY device_hostname ASC
+      `, [`%${siteName}%`]);
+      
+      // Return in expected format
+      return res.json({
+        site: siteName,
+        devices: result.rows.map(device => ({
+          ...device,
+          site_name: siteName
+        }))
+      });
+    }
+    
+    // Use site-specific table
+    const result = await pool.query(`SELECT * FROM ${tableName}`);
+    
+    // Return in expected format
+    res.json({
+      site: siteName,
+      devices: result.rows.map(device => ({
+        ...device,
+        site_name: siteName
+      }))
+    });
+  } catch (error) {
+    console.error("Error fetching inventory:", error);
+    res.status(500).json({ 
+      error: "Database error",
+      details: error.message,
+      site: siteName,
+      devices: []
+    });
+  }
+});
+
+// Add this route for site stats
+router.get('/site-stats/:siteName', async (req, res) => {
+  const { siteName } = req.params;
+  
+  try {
+    // Get the table name from mapping or generate it
+    let tableName = siteToTableMap[siteName] || 
+                   siteName.toLowerCase().replace(/[^a-z0-9]/g, '_') + "_device_inventory";
+    
+    const stats = {
+      total: 0,
+      active: 0,
+      offline: 0,
+      recent: 0,
+      pending: 0
+    };
+    
+    // Try to query the site-specific table
+    const tableExists = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = $1
+      );
+    `, [tableName]);
+    
+    if (tableExists.rows[0].exists) {
+      console.log(`Fetching stats from ${tableName}`);
+      
+      const result = await pool.query(`
+        SELECT 
+          COUNT(*) as total,
+          COUNT(CASE WHEN status = 'active' OR status = 'Active' THEN 1 END) as active,
+          COUNT(CASE WHEN status = 'offline' OR status = 'Offline' THEN 1 END) as offline,
+          COUNT(CASE WHEN last_seen > NOW() - INTERVAL '7 days' THEN 1 END) as recent
+        FROM ${tableName}
+      `);
+      
+      if (result.rows.length > 0) {
+        stats.total = parseInt(result.rows[0].total) || 0;
+        stats.active = parseInt(result.rows[0].active) || 0;
+        stats.offline = parseInt(result.rows[0].offline) || 0;
+        stats.recent = parseInt(result.rows[0].recent) || 0;
+      }
+    } else {
+      console.log(`Table ${tableName} not found, using device_inventory`);
+      
+      // Use the main device_inventory table with a filter
+      const result = await pool.query(`
+        SELECT 
+          COUNT(*) as total,
+          COUNT(CASE WHEN status = 'active' OR status = 'Active' THEN 1 END) as active,
+          COUNT(CASE WHEN status = 'offline' OR status = 'Offline' THEN 1 END) as offline,
+          COUNT(CASE WHEN last_seen > NOW() - INTERVAL '7 days' THEN 1 END) as recent
+        FROM device_inventory
+        WHERE location ILIKE $1
+      `, [`%${siteName}%`]);
+      
+      if (result.rows.length > 0) {
+        stats.total = parseInt(result.rows[0].total) || 0;
+        stats.active = parseInt(result.rows[0].active) || 0;
+        stats.offline = parseInt(result.rows[0].offline) || 0;
+        stats.recent = parseInt(result.rows[0].recent) || 0;
+      }
+    }
+    
+    res.json(stats);
+  } catch (error) {
+    console.error("Error fetching site stats:", error);
+    res.status(500).json({ 
+      error: "Database error", 
+      message: error.message,
+      total: 0,
+      active: 0,
+      offline: 0,
+      recent: 0,
+      pending: 0
+    });
+  }
 });
 
 module.exports = router; 

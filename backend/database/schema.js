@@ -3,21 +3,76 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
-// Database configuration
+// Database configuration with better connection handling
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: false // Disable SSL since we're using Railway's proxy
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    // Reduce max connections to prevent pool exhaustion
+    max: 10,
+    // Increase idle timeout to keep connections alive longer
+    idleTimeoutMillis: 60000,
+    // Increase connection timeout
+    connectionTimeoutMillis: 10000,
+    // Add connection retry logic
+    retry: {
+        retries: 5,
+        factor: 2,
+        minTimeout: 1000,
+        maxTimeout: 5000
+    }
 });
 
-// Test the connection
-pool.on('connect', () => {
-    console.log('Connected to the database');
-});
-
-pool.on('error', (err) => {
+// Enhanced error handling
+pool.on('error', (err, client) => {
     console.error('Unexpected error on idle client', err);
-    process.exit(-1);
+    if (err.code === 'EADDRNOTAVAIL') {
+        console.log('Connection lost, attempting to reconnect...');
+        // Don't exit process, let it retry
+        return;
+    }
+    if (client) {
+        client.release(true); // Force release with error
+    }
 });
+
+// Add connection validation
+pool.on('connect', (client) => {
+    client.on('error', (err) => {
+        console.error('Database client error:', err);
+        if (err.code === 'EADDRNOTAVAIL') {
+            client.release(true);
+        }
+    });
+});
+
+// Improved connection health check
+const checkConnection = async () => {
+    let client;
+    let retries = 5;
+    let delay = 1000; // Start with 1 second delay
+
+    while (retries > 0) {
+        try {
+            client = await pool.connect();
+            await client.query('SELECT 1');
+            console.log('Database connection is healthy');
+            return true;
+        } catch (err) {
+            console.error(`Database connection check failed (${retries} retries left):`, err);
+            retries--;
+            if (retries > 0) {
+                console.log(`Retrying in ${delay/1000} seconds...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                delay *= 2; // Exponential backoff
+            }
+        } finally {
+            if (client) {
+                client.release(true);
+            }
+        }
+    }
+    return false;
+};
 
 // Function to initialize database schema
 async function initializeSchema() {
@@ -193,6 +248,7 @@ async function initializeSchema() {
                     vendor_email VARCHAR(255),
                     contact_person VARCHAR(255),
                     phone_number VARCHAR(255),
+                    pdf_data BYTEA,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
@@ -283,6 +339,36 @@ async function initializeSchema() {
                 );
             `);
 
+            // Create vendors table
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS vendors (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    email VARCHAR(255),
+                    phone VARCHAR(50),
+                    address TEXT,
+                    contact_person VARCHAR(255),
+                    status VARCHAR(50) DEFAULT 'active',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+
+            // Create products table
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS products (
+                    id SERIAL PRIMARY KEY,
+                    vendor_id INTEGER REFERENCES vendors(id),
+                    sku VARCHAR(50) UNIQUE,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    price DECIMAL(10,2),
+                    status VARCHAR(50) DEFAULT 'active',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+
             // Create indexes for better performance
             await client.query(`
                 CREATE INDEX idx_device_hostname ON device_inventory(device_hostname);
@@ -294,6 +380,8 @@ async function initializeSchema() {
                 CREATE INDEX idx_purchase_order_number ON purchase_orders(order_number);
                 CREATE INDEX idx_supplier_name ON suppliers(name);
                 CREATE INDEX idx_activity_logs_user ON activity_logs(user_id);
+                CREATE INDEX IF NOT EXISTS idx_vendor_status ON vendors(status);
+                CREATE INDEX IF NOT EXISTS idx_vendor_name ON vendors(name);
             `);
         } else {
             console.log('Tables already exist, skipping schema creation');
@@ -578,6 +666,57 @@ async function storeCsvDataToInventory(csvData) {
     }
 }
 
+// Add this function to schema.js
+async function initializeVendorsTable() {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // Create vendors table
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS vendors (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                email VARCHAR(255),
+                phone VARCHAR(50),
+                address TEXT,
+                contact_person VARCHAR(255),
+                status VARCHAR(50) DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Create indexes
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_vendor_status ON vendors(status);
+            CREATE INDEX IF NOT EXISTS idx_vendor_name ON vendors(name);
+        `);
+
+        await client.query('COMMIT');
+        console.log('Vendors table initialized successfully');
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error initializing vendors table:', error);
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+// Test the connection
+const testConnection = async () => {
+    try {
+        const client = await pool.connect();
+        console.log('✅ Database connection successful');
+        client.release();
+    } catch (err) {
+        console.error('❌ Database connection error:', err);
+        // Don't exit process here, let the application handle it
+        throw err;
+    }
+};
+
 module.exports = {
     initializeSchema,
     checkSchema,
@@ -587,5 +726,8 @@ module.exports = {
     storeCsvFile,
     getCsvFile,
     listTables,
-    storeCsvDataToInventory
+    storeCsvDataToInventory,
+    initializeVendorsTable,
+    checkConnection,
+    testConnection
 }; 

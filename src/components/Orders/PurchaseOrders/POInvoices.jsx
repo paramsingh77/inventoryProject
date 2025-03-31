@@ -15,7 +15,6 @@ import { motion } from 'framer-motion';
 import PODocument from './PODocument';
 import { purchaseOrders as samplePOs } from '../../../data/samplePOData';
 import { useNotification } from '../../../context/NotificationContext';
-import socket from '../../../utils/socket';
 
 const POInvoices = () => {
   const [invoices, setInvoices] = useState([]);
@@ -28,87 +27,11 @@ const POInvoices = () => {
     // Initialize with sample data
     setInvoices(samplePOs || []);
     
-    // Listen for new invoices
-    const handleNewInvoice = (event) => {
-      if (event.detail?.type === 'NEW_INVOICE') {
-        const newInvoice = {
-          ...event.detail.invoice,
-          status: 'Received',
-          poReference: event.detail.poReference,
-          receivedDate: new Date().toISOString()
-        };
-        
-        setInvoices(prev => {
-          // Check if we already have this invoice
-          const exists = prev.some(inv => 
-            inv.invoiceNumber === newInvoice.invoiceNumber || 
-            (inv.poReference === newInvoice.poReference && newInvoice.poReference)
-          );
-          
-          if (!exists) {
-            addNotification('success', 'New invoice received');
-            return [newInvoice, ...prev];
-          }
-          return prev;
-        });
-      }
-    };
-
-    // Listen for invoice status changes
-    const handleInvoiceStatusChange = (event) => {
-      if (
-        event.detail?.type === 'INVOICE_APPROVED' || 
-        event.detail?.type === 'INVOICE_REJECTED'
-      ) {
-        const { invoice } = event.detail;
-        
-        setInvoices(prev => prev.map(inv => {
-          if (inv.invoiceNumber === invoice.invoiceNumber) {
-            return { ...inv, status: invoice.status };
-          }
-          return inv;
-        }));
-        
-        const action = event.detail.type === 'INVOICE_APPROVED' ? 'approved' : 'rejected';
-        addNotification('success', `Invoice ${invoice.invoiceNumber} has been ${action}`);
-      }
-    };
-
-    // Add Socket.IO event listener for new invoices
-    socket.on('newInvoice', (data) => {
-      console.log('Socket.IO newInvoice event received in POInvoices:', data);
-      if (data.type === 'NEW_INVOICE') {
-        const newInvoice = {
-          ...data.invoice,
-          status: 'Received',
-          poReference: data.poReference,
-          receivedDate: new Date().toISOString()
-        };
-        
-        setInvoices(prev => {
-          // Check if we already have this invoice
-          const exists = prev.some(inv => 
-            inv.invoiceNumber === newInvoice.invoiceNumber || 
-            (inv.poReference === newInvoice.poReference && newInvoice.poReference)
-          );
-          
-          if (!exists) {
-            addNotification('success', 'New invoice received via Socket.IO');
-            return [newInvoice, ...prev];
-          }
-          return prev;
-        });
-      }
-    });
-
-    window.addEventListener('invoice', handleNewInvoice);
-    window.addEventListener('invoice', handleInvoiceStatusChange);
+    // Remove socket listeners if any
     
-    return () => {
-      window.removeEventListener('invoice', handleNewInvoice);
-      window.removeEventListener('invoice', handleInvoiceStatusChange);
-      socket.off('newInvoice');
-    };
+    // return () => {
+    //   socket.off('invoice_created', handleNewInvoice);
+    // };
   }, [addNotification]);
 
   const handleViewInvoice = (invoice) => {

@@ -1,11 +1,28 @@
+const socketIO = require('socket.io');
+
 let io;
 
 module.exports = {
-  init: function(socketIo) {
-    io = socketIo;
+  init: (server) => {
+    io = socketIO(server, {
+      cors: {
+        origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+        methods: ['GET', 'POST'],
+        credentials: true
+      }
+    });
+    
+    io.on('connection', (socket) => {
+      console.log('Client connected', socket.id);
+      
+      socket.on('disconnect', () => {
+        console.log('Client disconnected', socket.id);
+      });
+    });
+    
     return io;
   },
-  getIO: function() {
+  getIO: () => {
     if (!io) {
       throw new Error('Socket.io not initialized!');
     }

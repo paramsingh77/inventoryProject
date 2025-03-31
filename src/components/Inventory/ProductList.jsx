@@ -1120,10 +1120,11 @@ const AddProduct = ({ show, onHide, onSave }) => {
   );
 };
 
-const ProductList = () => {
-  // State variables
-  const [devices, setDevices] = useState([]);
-  const [loading, setLoading] = useState(true);
+// Update the component to accept data prop
+const ProductList = ({ data }) => {
+  // If data is provided, use it; otherwise, fetch data
+  const [devices, setDevices] = useState(data || []);
+  const [loading, setLoading] = useState(!data);
   const [importSuccess, setImportSuccess] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -1215,9 +1216,23 @@ const ProductList = () => {
     }
   };
 
-  // Fetch devices from API
+  // Update devices when data prop changes
   useEffect(() => {
-    fetchDevicesWithImport();
+    if (data && data.length > 0) {
+      setDevices(data);
+      setLoading(false);
+    } else if (data) {
+      // If data is provided but empty, still update state
+      setDevices([]);
+      setLoading(false);
+    }
+  }, [data]);
+
+  // Fetch devices if no data was provided
+  useEffect(() => {
+    if (!data) {
+      fetchDevicesWithImport();
+    }
   }, []);
 
   // Filter devices based on search and filters

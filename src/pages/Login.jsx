@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Form, Button, Container, Card } from 'react-bootstrap';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import companyLogo from '../images/image copy.png';
 import { useAuth } from '../context/AuthContext';
 import logo from '../images/image copy.png'
-
+import { checkServerStatus } from '../utils/serverStatus';
+import { generateToken } from '../utils/token.js';
 const Login = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -13,46 +14,167 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [networkStatus, setNetworkStatus] = useState('online');
+  const [showMockOption, setShowMockOption] = useState(false);
+
+  useEffect(() => {
+    const handleOnline = () => setNetworkStatus('online');
+    const handleOffline = () => setNetworkStatus('offline');
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    // Check initial status
+    setNetworkStatus(navigator.onLine ? 'online' : 'offline');
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
+    // Check server status first
+    const isServerAvailable = await checkServerStatus();
+    
+    if (!isServerAvailable && process.env.NODE_ENV === 'development') {
+      console.log('Server is unavailable. Using mock data in development mode.');
+      
+      // Mock successful login for development testing when server is down
+      if (username === 'admin' && password === 'admin123') {
+        // Create mock admin user
+        const mockUser = {
+          id: 1,
+          username: 'admin',
+          email: 'admin@example.com',
+          role: 'admin',
+          assigned_site: ''
+        };
+        
+        // Store in localStorage
+        localStorage.setItem('token', 'mock-token-for-development');
+        localStorage.setItem('userId', mockUser.id);
+        localStorage.setItem('username', mockUser.username);
+        localStorage.setItem('userEmail', mockUser.email);
+        localStorage.setItem('userRole', mockUser.role);
+        localStorage.setItem('useMockData', 'true');
+        
+        // Navigate to sites page
+
+        // here we will add logic to redirect to the OTP page
+        const tempToken = generateToken();
+        sessionStorage.setItem('tempToken', tempToken);
+        navigate(`/authenticate/admin/session/${tempToken}`);
+
+
+        return;
+      } else if (username === 'user' && password === 'user123') {
+        // Create mock regular user
+        const mockUser = {
+          id: 2,
+          username: 'user',
+          email: 'user@example.com',
+          role: 'user',
+          assigned_site: 'Dameron Hospital'
+        };
+        
+        // Store in localStorage
+        localStorage.setItem('token', 'mock-token-for-development');
+        localStorage.setItem('userId', mockUser.id);
+        localStorage.setItem('username', mockUser.username);
+        localStorage.setItem('userEmail', mockUser.email);
+        localStorage.setItem('userRole', mockUser.role);
+        localStorage.setItem('assignedSite', mockUser.assigned_site);
+        localStorage.setItem('useMockData', 'true');
+        
+        // Navigate to the user's assigned site
+        const tempToken = generateToken();
+        sessionStorage.setItem('tempToken', tempToken);
+        navigate(`/authenticate/user/session/${tempToken}`);
+        return;
+      }
+      
+      setError('Invalid credentials. For development testing use admin/admin123 or user/user123');
+      setLoading(false);
+      return;
+    }
+
     try {
       console.log('Attempting login with:', username);
-      const result = await login(username, password);
       
-      if (!result.success) {
-        setError(result.error || 'Invalid credentials');
-        console.error('Login failed:', result.error);
+      // Use the login function from AuthContext instead of direct fetch
+      const result = await login(username, password);
+      console.log('Login successful:', result);
+      
+      // Redirect based on role using navigate instead of window.location
+      if (result.user.role === 'admin') {
+        console.log('Admin user detected, redirecting to admin portal');
+        // navigate('/sites');
+        const tempToken = generateToken();
+        sessionStorage.setItem('tempToken', tempToken);
+        navigate(`/authenticate/admin/session/${tempToken}`);
+      } else if (result.user.assigned_site) {
+        console.log('Regular user detected, redirecting to assigned site');
+        const tempToken = generateToken();
+        sessionStorage.setItem('tempToken', tempToken);
+        navigate(`/authenticate/user/session/${tempToken}`);
+      } else {
+        setError('Your account does not have an assigned site. Please contact an administrator.');
       }
-      else {
-        console.log('Login successful, redirecting...');
-        navigate('/sites');
+
+      // After successful login
+      localStorage.setItem('mockUser', JSON.stringify({
+        id: result.user.id,
+        username: result.user.username,
+        email: result.user.email,
+        role: result.user.role,
+        assigned_site: result.user.assigned_site
+      }));
+
+      // Then redirect to OTP verification
+      if (result.user.role === 'admin') {
+        const token = generateToken(result.user);
+        navigate(`/authenticate/admin/session/${token}`);
+      } else {
+        const token = generateToken(result.user);
+        navigate(`/authenticate/user/session/${token}`);
       }
     } catch (err) {
       console.error('Login error:', err);
-      setError(`Login error: ${err.message || 'An unknown error occurred'}`);
+      
+      // Add special handling for development mode
+      if (process.env.NODE_ENV === 'development') {
+        setError(`Login error: ${err.message || 'An unknown error occurred'}. 
+          The backend server may not be running. In development mode, you can use mock data.`);
+        
+        // Add a button to enable mock mode
+        setShowMockOption(true);
+      } else {
+        setError(`Login error: ${err.message || 'An unknown error occurred'}`);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const renderDevelopmentHelp = () => {
-    if (process.env.NODE_ENV === 'development') {
-      return (
-        <div className="mt-4 p-3 bg-light rounded">
-          <h6 className="text-muted">Development Mode Credentials:</h6>
-          <ul className="mb-0 small text-muted">
-            <li>Admin: username="admin", password="admin123"</li>
-            <li>User: username="user", password="user123"</li>
-          </ul>
-        </div>
-      );
-    }
-    return null;
-  };
+  // const renderDevelopmentHelp = () => {
+  //   if (process.env.NODE_ENV === 'development') {
+  //     return (
+  //       <div className="mt-4 p-3 bg-light rounded">
+  //         <h6 className="text-muted">Development Mode Credentials:</h6>
+  //         <ul className="mb-0 small text-muted">
+  //           <li>Admin: username="admin", password="admin123"</li>
+  //           <li>User: username="user", password="user123"</li>
+  //         </ul>
+  //       </div>
+  //     );
+  //   }
+  //   return null;
+  // };
 
   return (
     <div className="min-vh-100 d-flex align-items-center justify-content-center bg-light">
@@ -77,6 +199,16 @@ const Login = () => {
             <h2 className="fw-bold text-primary">Welcome Back!</h2>
             <p className="text-muted">Please sign in to continue</p>
           </div>
+
+          {networkStatus === 'offline' && (
+            <motion.div 
+              className="alert alert-warning"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+            >
+              You are currently offline. Please check your internet connection.
+            </motion.div>
+          )}
 
           {error && (
             <motion.div 
@@ -141,7 +273,7 @@ const Login = () => {
             </small>
           </div>
 
-          {renderDevelopmentHelp()}
+          {/* {renderDevelopmentHelp()} */}
         </div>
       </motion.div>
     </div>

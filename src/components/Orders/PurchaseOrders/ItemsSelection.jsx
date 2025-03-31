@@ -326,26 +326,29 @@ const ItemsSelection = ({ formData, setFormData, vendorProducts = [] }) => {
 
   // Get vendor name for display
   const getVendorDisplayName = () => {
-    if (vendorProducts.length > 0 && formData.vendor?.name) {
+    if (formData.vendor?.name) {
       return formData.vendor.name;
     }
     
-    if (formData.vendor && formData.vendor.name) {
-      return formData.vendor.name;
-    }
-    
-    if (formData.supplier && formData.supplier.startsWith('vendor-')) {
-      return formData.supplier.replace('vendor-', '').replace(/-/g, ' ');
+    if (formData.supplier && typeof formData.supplier === 'string') {
+      if (formData.supplier.startsWith('vendor-')) {
+        return formData.supplier
+          .replace('vendor-', '')
+          .replace(/-/g, ' ')
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+      }
+      return formData.supplier;
     }
     
     if (selectedVendorName) {
-      // Return capitalized vendor name
       return selectedVendorName.split(' ')
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ');
     }
     
-    return siteName || 'Inventory';
+    return 'Selected Vendor';
   };
 
   return (
@@ -365,7 +368,7 @@ const ItemsSelection = ({ formData, setFormData, vendorProducts = [] }) => {
           <Alert variant="primary" className="d-flex align-items-center mb-3">
             <FontAwesomeIcon icon={faInfoCircle} className="me-2" />
             <div>
-                  Showing products from {getVendorDisplayName()} available at your site.
+                  Showing products from {getVendorDisplayName()}
             </div>
           </Alert>
         )}
@@ -393,7 +396,7 @@ const ItemsSelection = ({ formData, setFormData, vendorProducts = [] }) => {
             <FontAwesomeIcon icon={faExclamationTriangle} className="me-2" />
                 {(formData.supplier || formData.vendor) 
                   ? `No products found from ${getVendorDisplayName()} matching your search criteria.`
-                  : 'No products found matching your search criteria. Please select a supplier first.'}
+                  : 'No products found. Please select a vendor first.'}
           </Alert>
         ) : (
               <div style={{ maxHeight: '400px', overflowY: 'auto' }}>

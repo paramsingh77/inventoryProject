@@ -1,0 +1,4 @@
+app.use('/api/test', require('./routes/test.routes'));
+
+
+just remove all the different tabs and should have one general list for all the invoices. It should contain all the invoices for all orders in process or recieved from vendors in correspondence to PO we sent. We already have IMAP and SMTP setup. And i think the extracted invoices are also stored 

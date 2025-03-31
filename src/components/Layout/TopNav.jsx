@@ -1,4 +1,5 @@
-import { Navbar, Container, Nav, NavDropdown, Button } from 'react-bootstrap';
+import React from 'react';
+import { Navbar, Container, Button, Badge } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faBell, 
@@ -10,15 +11,20 @@ import {
   faChartLine, 
   faCog,
   faFileInvoice,
-  faUserTie
+  faUserTie,
+  faMoon,
+  faSun,
+  faSignOutAlt
 } from '@fortawesome/free-solid-svg-icons';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 
 const TopNav = () => {
   const navigate = useNavigate();
-  const { darkMode } = useTheme();
+  const { darkMode, toggleDarkMode } = useTheme();
+  const { user, directLogout } = useAuth();
 
   const menuItems = [
     { path: '/inventory', icon: faBox, label: 'Inventory' },
@@ -36,41 +42,15 @@ const TopNav = () => {
         expand="lg" 
         style={{ height: '80px' }}
       >
-        <Container fluid>
-          <div className="d-flex align-items-center gap-4 ms-auto">
-            <motion.div whileHover={{ scale: 1.1 }}>
-              <Button variant={darkMode ? 'dark' : 'white'} className="p-0">
-                <FontAwesomeIcon 
-                  icon={faBell} 
-                  className={darkMode ? 'text-light' : 'text-dark'} 
-                  style={{ fontSize: '1.25rem' }} 
-                />
-              </Button>
-            </motion.div>
-            <NavDropdown 
-              title={
-                <FontAwesomeIcon 
-                  icon={faUser} 
-                  className={darkMode ? 'text-light' : 'text-dark'} 
-                  style={{ fontSize: '1.25rem' }} 
-                />
-              } 
-              id="basic-nav-dropdown"
-              align="end"
-              className={`fw-medium ${darkMode ? 'dark-dropdown' : ''}`}
-            >
-              <NavDropdown.Item href="/profile" className={darkMode ? 'text-light bg-dark' : ''}>
-                Profile
-              </NavDropdown.Item>
-              <NavDropdown.Item href="/settings" className={darkMode ? 'text-light bg-dark' : ''}>
-                Settings
-              </NavDropdown.Item>
-              <NavDropdown.Divider className={darkMode ? 'bg-dark' : ''} />
-              <NavDropdown.Item href="/logout" className={darkMode ? 'text-danger bg-dark' : 'text-secondary'}>
-                Logout
-              </NavDropdown.Item>
-            </NavDropdown>
+        <Container fluid className="position-relative">
+          {/* Company name on the left */}
+          <div className="d-flex align-items-center" style={{ position: 'absolute', left: '20px' }}>
+            <h5 className={`m-0 fw-bold ${darkMode ? 'text-light' : 'text-dark'}`}>
+              American Advance<br />Management
+            </h5>
           </div>
+          
+          {/* Brand in the center */}
           <Navbar.Brand 
             href="/" 
             className={`position-absolute start-50 fw-bold fs-2 m-0 ${darkMode ? 'text-light' : 'text-dark'}`}
@@ -82,6 +62,55 @@ const TopNav = () => {
           >
             AAM Inventory
           </Navbar.Brand>
+          
+          {/* Right-aligned items in a single row */}
+          <div className="d-flex align-items-center gap-3" style={{ position: 'absolute', right: '20px' }}>
+            {/* Bell icon */}
+            <motion.div whileHover={{ scale: 1.1 }}>
+              <Button variant={darkMode ? 'dark' : 'white'} className="p-0 position-relative">
+                <FontAwesomeIcon 
+                  icon={faBell} 
+                  className={darkMode ? 'text-light' : 'text-dark'} 
+                  style={{ fontSize: '1.25rem' }} 
+                />
+                <Badge 
+                  bg="danger" 
+                  className="position-absolute top-0 start-100 translate-middle rounded-circle"
+                  style={{ fontSize: '0.6rem', padding: '0.25rem' }}
+                >
+                  2
+                </Badge>
+              </Button>
+            </motion.div>
+            
+            {/* Dark mode toggle */}
+            <motion.div whileHover={{ scale: 1.1 }}>
+              <Button 
+                variant={darkMode ? 'dark' : 'white'} 
+                className="p-0"
+                onClick={toggleDarkMode}
+              >
+                <FontAwesomeIcon 
+                  icon={darkMode ? faSun : faMoon} 
+                  className={darkMode ? 'text-light' : 'text-dark'} 
+                  style={{ fontSize: '1.25rem' }} 
+                />
+              </Button>
+            </motion.div>
+            
+            {/* Logout button */}
+            <motion.div whileHover={{ scale: 1.05 }}>
+              <Button 
+                variant={darkMode ? 'outline-light' : 'outline-dark'} 
+                size="sm"
+                onClick={directLogout}
+                className="d-flex align-items-center px-3 py-1"
+              >
+                <FontAwesomeIcon icon={faSignOutAlt} className="me-2" />
+                <span>Logout</span>
+              </Button>
+            </motion.div>
+          </div>
         </Container>
       </Navbar>
 
