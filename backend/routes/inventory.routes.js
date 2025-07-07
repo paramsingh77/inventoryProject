@@ -19,6 +19,69 @@ const siteToTableMap = {
   // Add remaining mappings as needed
 };
 
+// Function to determine device type based on device attributes
+const determineDeviceType = (device) => {
+  const model = (device.device_model || '').toLowerCase();
+  const hostname = (device.device_hostname || '').toLowerCase();
+  const os = (device.operating_system || '').toLowerCase();
+  const description = (device.device_description || '').toLowerCase();
+
+  // Check for VM/Virtual Server
+  if (
+    hostname.includes('vm') || 
+    hostname.includes('virtual') ||
+    model.includes('vm') ||
+    model.includes('virtual') ||
+    description.includes('virtual machine') ||
+    description.includes('vm')
+  ) {
+    return 'Server-VM';
+  }
+
+  // Check for Physical Server
+  if (
+    model.includes('server') ||
+    hostname.startsWith('srv') ||
+    hostname.startsWith('server') ||
+    description.includes('server') ||
+    (os.includes('server') && !hostname.includes('vm'))
+  ) {
+    return 'Server-Physical';
+  }
+
+  // Check for Cell Phones
+  if (
+    model.includes('iphone') ||
+    model.includes('samsung') ||
+    model.includes('mobile') ||
+    description.includes('phone') ||
+    description.includes('mobile device')
+  ) {
+    // Check for carrier
+    if (device.vendor?.toLowerCase().includes('att')) {
+      return 'Cell-phones-ATT';
+    }
+    if (device.vendor?.toLowerCase().includes('verizon')) {
+      return 'Cell-phones-Verizon';
+    }
+    return 'Cell-phones-Other';
+  }
+
+  // Check for DLALION License
+  if (
+    model.includes('dlalion') ||
+    model.includes('license') ||
+    description.includes('dlalion') ||
+    description.includes('license') ||
+    hostname.includes('lic-') ||
+    hostname.includes('dlalion')
+  ) {
+    return 'DLALION-License';
+  }
+
+  return 'Other';
+};
+
 // Get inventory for a specific site
 router.get('/:siteId', authenticateToken, async (req, res) => {
   try {
@@ -118,6 +181,8 @@ router.get('/site/:siteName/devices', async (req, res) => {
       );
     `, [tableName]);
 
+    let devices = [];
+
     if (!tableExists.rows[0].exists) {
       console.log(`Table ${tableName} not found, falling back to device_inventory table with location filter`);
       
@@ -128,27 +193,27 @@ router.get('/site/:siteName/devices', async (req, res) => {
         ORDER BY device_hostname ASC
       `, [`%${siteName}%`]);
 
-      return res.json({
-        site: siteName,
-        devices: result.rows.map(device => ({
-          ...device,
-          site_name: siteName
-        }))
-      });
+      devices = result.rows;
+    } else {
+      // Use site-specific table
+      const result = await client.query(`
+        SELECT * FROM ${tableName}
+        ORDER BY device_hostname ASC
+      `);
+
+      devices = result.rows;
     }
 
-    // Use site-specific table
-    const result = await client.query(`
-      SELECT * FROM ${tableName}
-      ORDER BY device_hostname ASC
-    `);
+    // Process each device to determine its type
+    const processedDevices = devices.map(device => ({
+      ...device,
+      site_name: siteName,
+      device_type: determineDeviceType(device)
+    }));
 
     res.json({
       site: siteName,
-      devices: result.rows.map(device => ({
-        ...device,
-        site_name: siteName
-      }))
+      devices: processedDevices
     });
 
   } catch (error) {
@@ -159,13 +224,8 @@ router.get('/site/:siteName/devices', async (req, res) => {
       devices: []
     });
   } finally {
-    // Only release the client if it was successfully acquired
     if (client) {
-      try {
-        await client.release();
-      } catch (releaseError) {
-        console.error('Error releasing client:', releaseError);
-      }
+      client.release();
     }
   }
 });

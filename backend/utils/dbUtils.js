@@ -1,10 +1,15 @@
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
-const config = require('../config/db.config');
+require('dotenv').config();
 
 // Create a connection pool
-const pool = new Pool(config);
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false
+    }
+});
 
 // Set up logging
 const LOG_DIR = path.join(__dirname, '../logs');

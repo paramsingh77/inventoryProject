@@ -1,0 +1,62 @@
+{
+  "total": 5,
+  "categories": {
+    "Server-Physical": 2,
+    "Server-VM": 1,
+    "Cell-phones-ATT": 1,
+    "Cell-phones-Verizon": 0,
+    "Cell-phones-Other": 0,
+    "DLALION-License": 0,
+    "Desktop": 1,
+    "Laptop": 0,
+    "Other": 0
+  },
+  "category_details": {
+    "Server-Physical": {
+      "count": 2,
+      "sample_hostnames": [
+        "srv001",
+        "license-srv1"
+      ]
+    },
+    "Server-VM": {
+      "count": 1,
+      "sample_hostnames": [
+        "vm-web01"
+      ]
+    },
+    "Cell-phones-ATT": {
+      "count": 1,
+      "sample_hostnames": [
+        "att-phone1"
+      ]
+    },
+    "Cell-phones-Verizon": {
+      "count": 0,
+      "sample_hostnames": []
+    },
+    "Cell-phones-Other": {
+      "count": 0,
+      "sample_hostnames": []
+    },
+    "DLALION-License": {
+      "count": 0,
+      "sample_hostnames": []
+    },
+    "Desktop": {
+      "count": 1,
+      "sample_hostnames": [
+        "desktop001"
+      ]
+    },
+    "Laptop": {
+      "count": 0,
+      "sample_hostnames": []
+    },
+    "Other": {
+      "count": 0,
+      "sample_hostnames": []
+    }
+  },
+  "timestamp": "2025-05-01T21:58:29.008550"
+}

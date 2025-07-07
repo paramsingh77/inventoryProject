@@ -1,0 +1,108 @@
+{
+  "name": "reactory",
+  "version": "0.1.0",
+  "private": true,
+  "proxy": "http://localhost:2000",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.6.1",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@fortawesome/fontawesome-svg-core": "^6.7.2",
+    "@fortawesome/free-solid-svg-icons": "^6.7.2",
+    "@fortawesome/react-fontawesome": "^0.2.2",
+    "@mui/icons-material": "^6.4.6",
+    "@mui/material": "^6.4.6",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.2.0",
+    "@testing-library/user-event": "^13.5.0",
+    "antd": "^5.24.3",
+    "aos": "^2.3.4",
+    "assert": "^2.1.0",
+    "axios": "^1.8.3",
+    "bcrypt": "^5.1.1",
+    "bootstrap": "^5.3.3",
+    "browserify-zlib": "^0.2.0",
+    "buffer": "^6.0.3",
+    "chart.js": "^4.4.8",
+    "clsx": "^2.1.1",
+    "crypto-browserify": "^3.12.1",
+    "devextreme": "^24.2.6",
+    "devextreme-react": "^24.2.6",
+    "event-source-polyfill": "^1.0.31",
+    "express-fileupload": "^1.5.1",
+    "firebase": "^11.5.0",
+    "framer-motion": "^12.6.2",
+    "html2canvas": "^1.4.1",
+    "https-browserify": "^1.0.0",
+    "igniteui-react-core": "^18.8.1",
+    "igniteui-react-grids": "^18.8.1",
+    "imap-simple": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "jspdf": "^3.0.1",
+    "jspdf-autotable": "^5.0.2",
+    "mailparser": "^3.7.2",
+    "os-browserify": "^0.3.0",
+    "path-browserify": "^1.0.1",
+    "pdf-lib": "^1.17.1",
+    "pg": "^8.14.1",
+    "process": "^0.11.10",
+    "querystring-es3": "^0.2.1",
+    "react": "^19.0.0",
+    "react-app-rewired": "^2.2.1",
+    "react-bootstrap": "^2.10.9",
+    "react-chartjs-2": "^5.3.0",
+    "react-dom": "^19.0.0",
+    "react-icons": "^5.5.0",
+    "react-router-dom": "^7.3.0",
+    "react-scripts": "5.0.1",
+    "recharts": "^2.15.1",
+    "serve": "^14.2.1",
+    "socket.io-client": "^4.8.1",
+    "stream-browserify": "^3.0.0",
+    "stream-http": "^3.2.0",
+    "tailwind-merge": "^3.0.2",
+    "url": "^0.11.4",
+    "util": "^0.12.5",
+    "web-vitals": "^2.1.4",
+    "xlsx": "^0.18.5"
+  },
+  "scripts": {
+    "start": "react-app-rewired start",
+    "build": "GENERATE_SOURCEMAP=false react-app-rewired build",
+    "build:prod": "GENERATE_SOURCEMAP=false CI=false react-app-rewired build",
+    "test": "react-app-rewired test",
+    "eject": "react-scripts eject",
+    "init-db": "node backend/scripts/initDb.js",
+    "seed-db": "node backend/scripts/seedDb.js",
+    "create-db": "node backend/scripts/createDb.js",
+    "update-db": "node backend/scripts/updateSchema.js",
+    "cypress:open": "cypress open"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "cypress": "^14.5.0",
+    "enhanced-resolve": "^5.18.1"
+  }
+}

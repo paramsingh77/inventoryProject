@@ -1,0 +1,311 @@
+/* Report Generator Styles */
+.report-generator {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Report Type Navigation */
+.report-nav .nav-link {
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  border: 1px solid var(--bs-border-color);
+  background: transparent;
+  color: var(--bs-body-color);
+  transition: all 0.2s ease;
+  margin-bottom: 0.5rem;
+}
+
+.report-nav .nav-link:hover {
+  background: var(--bs-primary-bg-subtle);
+  border-color: var(--bs-primary);
+  transform: translateY(-1px);
+}
+
+.report-nav .nav-link.active,
+.report-nav .nav-link.active:focus,
+.report-nav .nav-link.active:active,
+.nav-pills .report-nav .nav-link.active,
+.nav-tabs .report-nav .nav-link.active,
+.nav-pills .nav-link.active,
+.nav-tabs .nav-link.active {
+  background: #f3f4f6 !important;
+  border-color: #d1d5db !important;
+  color: #222 !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.04) !important;
+}
+
+.report-nav .nav-link .fw-semibold {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.report-nav .nav-link small {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+/* Filter Panel */
+.filter-panel {
+  background: var(--bs-light);
+  border-radius: 12px;
+  border: 1px solid var(--bs-border-color);
+  transition: all 0.3s ease;
+}
+
+.filter-panel.expanded {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+/* Report Cards */
+.report-card {
+  border-radius: 12px;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: all 0.2s ease;
+}
+
+.report-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+}
+
+.report-card .card-header {
+  background: linear-gradient(135deg, var(--bs-primary) 0%, var(--bs-primary-bg-subtle) 100%);
+  border-bottom: none;
+  border-radius: 12px 12px 0 0 !important;
+  color: white;
+  font-weight: 600;
+}
+
+/* Metric Cards */
+.metric-card {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border: none;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.metric-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+.metric-card .text-primary {
+  color: var(--bs-primary) !important;
+}
+
+.metric-card .text-success {
+  color: #198754 !important;
+}
+
+.metric-card .text-info {
+  color: #0dcaf0 !important;
+}
+
+.metric-card .text-warning {
+  color: #ffc107 !important;
+}
+
+/* Tables */
+.report-table {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.report-table thead th {
+  background: linear-gradient(135deg, var(--bs-primary) 0%, var(--bs-primary-bg-subtle) 100%);
+  color: white;
+  border: none;
+  font-weight: 600;
+  padding: 1rem;
+}
+
+.report-table tbody tr {
+  transition: background-color 0.2s ease;
+}
+
+.report-table tbody tr:hover {
+  background-color: var(--bs-primary-bg-subtle);
+}
+
+/* Badges */
+.status-badge {
+  border-radius: 20px;
+  padding: 0.5rem 1rem;
+  font-weight: 500;
+  font-size: 0.8rem;
+}
+
+/* Export Buttons */
+.export-btn {
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.export-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.export-btn.outline-success:hover {
+  background: #198754;
+  border-color: #198754;
+  color: white;
+}
+
+.export-btn.outline-danger:hover {
+  background: #dc3545;
+  border-color: #dc3545;
+  color: white;
+}
+
+.export-btn.outline-info:hover {
+  background: #0dcaf0;
+  border-color: #0dcaf0;
+  color: white;
+}
+
+/* Loading States */
+.loading-overlay {
+  position: relative;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.loading-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+}
+
+/* Preview Modal */
+.preview-modal .modal-content {
+  border-radius: 16px;
+  border: none;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+}
+
+.preview-modal .modal-header {
+  background: linear-gradient(135deg, var(--bs-primary) 0%, var(--bs-primary-bg-subtle) 100%);
+  color: white;
+  border-radius: 16px 16px 0 0;
+}
+
+/* Custom Export Modal */
+.export-modal .modal-content {
+  border-radius: 12px;
+  border: none;
+}
+
+.export-format-option {
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.export-format-option:hover {
+  border-color: var(--bs-primary);
+  background: var(--bs-primary-bg-subtle);
+}
+
+.export-format-option.selected {
+  border-color: var(--bs-primary);
+  background: var(--bs-primary-bg-subtle);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .report-nav .nav-link {
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.25rem;
+  }
+  
+  .report-nav .nav-link .fw-semibold {
+    font-size: 0.85rem;
+  }
+  
+  .metric-card h3 {
+    font-size: 1.5rem;
+  }
+  
+  .export-btn {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+  }
+}
+
+/* Dark Mode Support */
+[data-bs-theme="dark"] .report-generator {
+  background-color: #1a1a1a;
+  color: #e0e0e0;
+}
+
+[data-bs-theme="dark"] .metric-card {
+  background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+  color: #e0e0e0;
+}
+
+[data-bs-theme="dark"] .report-table thead th {
+  background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+  color: #e0e0e0;
+}
+
+[data-bs-theme="dark"] .report-table tbody tr:hover {
+  background-color: #2d2d2d;
+}
+
+/* Animation Classes */
+.fade-in {
+  animation: fadeIn 0.3s ease-in;
+}
+
+.slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Print Styles */
+@media print {
+  .report-generator .btn,
+  .report-generator .nav,
+  .report-generator .filter-panel {
+    display: none !important;
+  }
+  
+  .report-generator .card {
+    border: 1px solid #000 !important;
+    box-shadow: none !important;
+  }
+  
+  .report-generator .table {
+    border: 1px solid #000 !important;
+  }
+  
+  .report-generator .table th,
+  .report-generator .table td {
+    border: 1px solid #000 !important;
+  }
+} 

@@ -74,6 +74,42 @@ const getSupplierById = async (req, res) => {
   }
 };
 
+// Get a supplier by name
+const getSupplierByName = async (req, res) => {
+  try {
+    const { name } = req.params;
+    
+    const query = `
+      SELECT * FROM suppliers
+      WHERE LOWER(name) = LOWER($1)
+      OR LOWER(name) LIKE LOWER($2)
+      ORDER BY name
+      LIMIT 1
+    `;
+    
+    const result = await db.safeQuery(query, [name, `%${name}%`]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Supplier not found'
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      data: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error fetching supplier by name:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error fetching supplier by name', 
+      error: error.message 
+    });
+  }
+};
+
 // Create a new supplier
 const createSupplier = async (req, res) => {
   const { 
@@ -369,6 +405,7 @@ const addSupplierProduct = async (req, res) => {
 module.exports = {
   getAllSuppliers,
   getSupplierById,
+  getSupplierByName,
   createSupplier,
   updateSupplier,
   deleteSupplier,

@@ -1,0 +1,5 @@
+id,device_hostname,device_model,device_type,device_cpu,operating_system,category,cpu_type
+1,srv001,PowerEdge R740,Server,Intel Xeon Gold 6248R,Windows Server 2019,Server-Physical,Server
+3,vm-web01,VMware Virtual Platform,Server,Intel(R) Xeon(R) CPU E5-2670 0 @ 2.60GHz (4 vCPUs),Ubuntu 20.04 LTS,Server-VM,VM
+2,desktop001,OptiPlex 7080,Desktop,Intel Core i7-10700,Windows 10 Pro,Desktop,Desktop
+4,laptop001,ThinkPad X1,Laptop,Intel Core i7-1165G7,Windows 11,Laptop,Desktop

@@ -75,11 +75,13 @@ router.get('/purchase-orders/:id/invoices', authMiddleware, async (req, res) => 
 });
 
 // Force check emails now (for testing)
-router.post('/email-processor/check-now', authMiddleware, adminMiddleware, async (req, res) => {
+router.post('/email-processor/check-now', async (req, res) => {
   try {
+    console.log('Manual email check initiated');
     await emailProcessor.checkEmails();
     res.json({ message: 'Email check initiated successfully' });
   } catch (error) {
+    console.error('Failed to check emails:', error);
     res.status(500).json({ error: 'Failed to check emails', message: error.message });
   }
 });

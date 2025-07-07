@@ -28,16 +28,16 @@ const adminMiddleware = (req, res, next) => {
 // ====================================================================
 
 // Test routes
-router.get('/purchase-orders/test', (req, res) => {
+router.get('/test', (req, res) => {
   res.json({ message: 'Purchase order routes are working' });
 });
 
-router.get('/purchase-orders/test-route', (req, res) => {
+router.get('/test-route', (req, res) => {
   console.log('Test route hit without DB access');
   res.json({ message: 'Test route works' });
 });
 
-router.get('/purchase-orders/test-db', async (req, res) => {
+router.get('/test-db', async (req, res) => {
   try {
     console.log('Testing DB connection...');
     const result = await pool.query('SELECT NOW()');
@@ -53,17 +53,36 @@ router.get('/purchase-orders/test-db', async (req, res) => {
     });
   }
 });
-router.get('/purchase-orders', async (req, res) => {
+// from where this route is called?
+// 
+router.get('/', async (req, res) => {
+  console.log('🔴 [PURCHASE_ORDER_ROUTES] GET /purchase-orders request received:', {
+    query: req.query,
+    timestamp: new Date().toISOString()
+  });
+
+  const { siteId } = req.query;
+  
+  console.log('🔴 [PURCHASE_ORDER_ROUTES] Extracted siteId from query:', {
+    siteId: siteId,
+    type: typeof siteId,
+    timestamp: new Date().toISOString()
+  });
+
+  // if (!siteId) {
+  //   console.error('❌ [PURCHASE_ORDER_ROUTES] No siteId provided in request');
+  //   // return res.status(400).json({ error: 'Site ID is required' });
+  // }
+
   const client = await pool.connect();
   try {
-    const { siteId } = req.query;
-    
-    if (!siteId) {
-      return res.status(400).json({ error: 'Site ID is required' });
-    }
-
     // Check if we should use site-specific tables
     const useSiteTables = await shouldUseSiteTables(siteId);
+    console.log('🔴 [PURCHASE_ORDER_ROUTES] Table strategy decision:', {
+      siteId: siteId,
+      useSiteTables: useSiteTables,
+      timestamp: new Date().toISOString()
+    });
 
     if (useSiteTables) {
       // Get site name
@@ -93,10 +112,8 @@ router.get('/purchase-orders', async (req, res) => {
       // Use old tables with site_id filter
       const query = `
         SELECT po.*, 
-               u.username as ordered_by_name,
                s.name as supplier_name
         FROM purchase_orders po
-        LEFT JOIN users u ON po.ordered_by = u.id
         LEFT JOIN suppliers s ON po.supplier_id = s.id
         WHERE po.site_id = $1
         ORDER BY po.created_at DESC
@@ -115,9 +132,10 @@ router.get('/purchase-orders', async (req, res) => {
 
 
 // Debug endpoint - must be BEFORE any /:id routes
-router.get('/purchase-orders/debug-all', async (req, res) => {
+router.get('/debug-all', async (req, res) => {
   try {
     console.log('Checking for any orders in the database...');
+    // FIXED: Use correct column name 'order_number' instead of 'po_number'
     const query = `SELECT id, order_number, status FROM purchase_orders LIMIT 10`;
     const result = await pool.query(query);
     
@@ -133,7 +151,7 @@ router.get('/purchase-orders/debug-all', async (req, res) => {
 });
 
 // Update the history route to be more flexible
-router.get('/purchase-orders/history', async (req, res) => {
+router.get('/history', async (req, res) => {
   console.log('🔍 ORDER HISTORY ROUTE HIT at', new Date().toISOString());
   
   try {
@@ -177,7 +195,7 @@ router.get('/purchase-orders/history', async (req, res) => {
 });
 
 // Processed emails route
-router.get('/purchase-orders/processed-emails', async (req, res) => {
+router.get('/processed-emails', async (req, res) => {
   try {
     // Get orders with tracking information that were recently updated
     const query = `
@@ -211,7 +229,7 @@ router.get('/purchase-orders/processed-emails', async (req, res) => {
 });
 
 // Check emails route
-router.post('/purchase-orders/check-emails', async (req, res) => {
+router.post('/check-emails', async (req, res) => {
   try {
     const emails = await emailCheckScheduler.checkEmailsNow();
     res.status(200).json({ 
@@ -225,7 +243,7 @@ router.post('/purchase-orders/check-emails', async (req, res) => {
 });
 
 // Tracking route
-router.get('/purchase-orders/tracking', async (req, res) => {
+router.get('/tracking', async (req, res) => {
   try {
     const query = `
       SELECT 
@@ -263,7 +281,7 @@ router.get('/purchase-orders/tracking', async (req, res) => {
 });
 
 // Status route
-router.get('/purchase-orders/status/:status', async (req, res) => {
+router.get('/status/:status', async (req, res) => {
     try {
         const { status } = req.params;
         console.log('Status:', status);
@@ -299,7 +317,7 @@ router.get('/purchase-orders/status/:status', async (req, res) => {
 });
 
 // Schema check route
-router.get('/purchase-orders/check-schema', async (req, res) => {
+router.get('/check-schema', async (req, res) => {
     try {
         console.log('Checking database schema');
         
@@ -366,7 +384,7 @@ router.get('/purchase-orders/check-schema', async (req, res) => {
 });
 
 // Pending orders route
-router.get('/purchase-orders/pending', async (req, res) => {
+router.get('/pending', async (req, res) => {
     //  console.log('Fetching pending purchase ordersssssss');
     try {
         const query = `
@@ -445,27 +463,39 @@ router.post('/email-webhook', async (req, res) => {
       const orderNumber = orderDetails.orderNumber || `PO-${Date.now()}`;
       const vendor = orderDetails.vendor || extractVendorFromEmail(sender);
       
-      // Use the pool to insert into the purchase_orders table
+      // FIXED: Include both po_number and order_number columns to satisfy database constraints
       const insertOrderQuery = `
         INSERT INTO purchase_orders (
+          po_number,
           order_number,
           vendor_name,
           shipping_status,
           total_amount,
           status,
+          site_id,
           created_at,
           last_status_update
         )
-        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
       `;
       
+      // FIXED: Get default site_id for email webhook POs
+      // For email webhooks, we'll use a default site or try to infer from context
+      const defaultSiteResult = await pool.query('SELECT id FROM sites WHERE name = $1', ['Amarillo Specialty Hospital']);
+      const defaultSiteId = defaultSiteResult.rows.length > 0 ? defaultSiteResult.rows[0].id : null;
+      
+      console.log('🔴 [EMAIL_WEBHOOK] Using default site_id for email webhook PO:', defaultSiteId);
+      
+      // FIXED: Include both po_number and order_number values to satisfy database constraints
       const orderValues = [
-        orderNumber,
+        orderNumber,  // po_number
+        orderNumber,  // order_number (same value for both columns)
         vendor,
         'Shipped',
         0, // Default total amount, update as needed
-        'shipped' // Status for tracking
+        'shipped', // Status for tracking
+        defaultSiteId // FIXED: Add site_id
       ];
       
       console.log('Inserting new order with values:', orderValues);
@@ -678,7 +708,7 @@ router.patch('/purchase-orders/:id/status', async (req, res) => {
 // Send email route - This route handles sending purchase order emails to vendors
 // It validates the PO is approved, gets all PO details including items,
 // generates a PDF attachment if requested, and sends the email to the vendor
-router.post('/purchase-orders/:id/send-email', async (req, res) => {
+router.post('/:id/send-email', async (req, res) => {
   const { id } = req.params;
   const { includeAttachment } = req.body;
   
@@ -818,7 +848,7 @@ const upload = multer({
 
 // Get all purchase orders
 // Get a specific purchase order by ID
-router.get('/purchase-orders/:id', async (req, res) => {
+router.get('/:id', authMiddleware, async (req, res) => {
   try {
       const { id } = req.params;
       
@@ -855,45 +885,8 @@ router.get('/purchase-orders/:id', async (req, res) => {
   }
 });
 
-
-// Get purchase orders by status
-router.get('/purchase-orders/status/:status', async (req, res) => {
-    try {
-        const { status } = req.params;
-        console.log('Status:', status);
-        const query = `
-            SELECT po.*, 
-                   u.username as ordered_by_name,
-                   s.name as supplier_name
-            FROM purchase_orders po
-            LEFT JOIN users u ON po.ordered_by = u.id
-            LEFT JOIN suppliers s ON po.supplier_id = s.id
-            WHERE po.status = $1
-            ORDER BY po.created_at DESC
-        `;
-        
-        const result = await pool.query(query, [status]);
-        const purchaseOrders = result.rows;
-        
-        // For each purchase order, fetch its items
-        for (const order of purchaseOrders) {
-            const itemsQuery = `
-                SELECT * FROM order_items 
-                WHERE order_id = $1
-            `;
-            const itemsResult = await pool.query(itemsQuery, [order.id]);
-            order.items = itemsResult.rows;
-        }
-        
-        res.status(200).json(purchaseOrders);
-    } catch (error) {
-        console.error(`Error fetching ${req.params.status} purchase orders:`, error);
-        res.status(500).json({ message: `Error fetching ${req.params.status} purchase orders`, error: error.message });
-    }
-});
-
 // Get pending purchase orders (admin only)
-router.get('/purchase-orders/pending', async (req, res) => {
+router.get('/pending', async (req, res) => {
     console.log('Fetching pending purchase ordersssssss');
     try {
         const query = `
@@ -954,207 +947,90 @@ const generateUniqueOrderNumber = async (client, maxAttempts = 10) => {
 };
 
 // Then modify your POST route
-router.post('/purchase-orders', async (req, res) => {
-  console.log('Received PO creation request:', JSON.stringify(req.body, null, 2));
+router.post('/', async (req, res) => {
+  // FIXED: Ensure supplier_id, vendor, and item descriptions are handled
   const client = await pool.connect();
-  
   try {
-    await client.query('BEGIN');
+    const {
+      order_number,
+      supplier_id,
+      ordered_by,
+      order_date,
+      expected_delivery,
+      status = 'draft',
+      total_amount,
+      notes,
+      vendor = {},
+      vendor_name,
+      vendor_email,
+      contact_person,
+      phone_number,
+      site_id,
+      items = [],
+      ...rest
+    } = req.body;
 
-    // Get the order number from the request
-    let orderNumber = req.body.order_number || req.body.poNumber;
-    
-    // Check if the order number exists
-    if (orderNumber) {
-      const checkQuery = 'SELECT EXISTS(SELECT 1 FROM purchase_orders WHERE order_number = $1)';
-      const result = await client.query(checkQuery, [orderNumber]);
-      
-      if (result.rows[0].exists) {
-        console.log(`Order number ${orderNumber} already exists, generating a new one`);
-        // Generate a new unique order number
-        orderNumber = await generateUniqueOrderNumber(client);
-        console.log(`Using new order number: ${orderNumber}`);
+    let finalVendorName = vendor_name || vendor.name || '';
+    let finalVendorEmail = vendor_email || vendor.email || '';
+    let finalContactPerson = contact_person || vendor.contactPerson || '';
+    let finalPhoneNumber = phone_number || vendor.phone || '';
+    let finalSupplierId = supplier_id || vendor.id || null;
+
+    // If supplier_id is provided, fetch supplier details for snapshot
+    if (finalSupplierId) {
+      const supplierResult = await pool.query(
+        'SELECT name, email, phone, contact_person, address FROM suppliers WHERE id = $1',
+        [finalSupplierId]
+      );
+      if (supplierResult.rows.length > 0) {
+        const s = supplierResult.rows[0];
+        if (!finalVendorName) finalVendorName = s.name;
+        if (!finalVendorEmail) finalVendorEmail = s.email;
+        if (!finalContactPerson) finalContactPerson = s.contact_person;
+        if (!finalPhoneNumber) finalPhoneNumber = s.phone;
+        // If you have a vendor_address column, set it here
+        // if (!vendor_address) vendor_address = s.address;
       }
-    } else {
-      // No order number provided, generate one
-      orderNumber = await generateUniqueOrderNumber(client);
-      console.log(`No order number provided, generated: ${orderNumber}`);
     }
 
-    // Get order_items schema to check item_id type
-    const itemsSchemaQuery = `
-      SELECT column_name, data_type 
-      FROM information_schema.columns 
-      WHERE table_name = 'order_items'
-      AND column_name = 'item_id'
-    `;
-    const itemsSchema = await client.query(itemsSchemaQuery);
-    const itemIdType = itemsSchema.rows[0]?.data_type;
-    
-    console.log(`item_id column type is: ${itemIdType}`);
-    
-    // Insert the purchase order with the verified unique order number
-    const insertOrderQuery = `
+    // Insert PO (add more fields as needed)
+    const insertPOQuery = `
       INSERT INTO purchase_orders (
-        order_number,
-        supplier_id,
-        expected_delivery,
-        status,
-        total_amount,
-        notes,
-        vendor_name,
-        vendor_email,
-        contact_person,
-        phone_number,
-        order_date
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
+        order_number, supplier_id, ordered_by, order_date, expected_delivery, status, total_amount, notes,
+        vendor_name, vendor_email, contact_person, phone_number, site_id
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
       RETURNING *
     `;
-
-    const orderValues = [
-      orderNumber,
-      null,  // supplier_id is nullable
-      req.body.expected_delivery || req.body.deliveryDate || null,
-      'pending',
-      parseFloat(req.body.total_amount || req.body.totalAmount || 0),
-      req.body.notes || '',
-      req.body.vendor_name || (req.body.vendor && req.body.vendor.name) || 'Unknown Vendor',
-      req.body.vendor_email || (req.body.vendor && req.body.vendor.email) || '',
-      req.body.contact_person || (req.body.vendor && req.body.vendor.contactPerson) || '',
-      req.body.phone_number || (req.body.vendor && req.body.vendor.phone) || ''
+    const insertPOValues = [
+      order_number, finalSupplierId, ordered_by, order_date, expected_delivery, status, total_amount, notes,
+      finalVendorName, finalVendorEmail, finalContactPerson, finalPhoneNumber, site_id
     ];
+    const poResult = await pool.query(insertPOQuery, insertPOValues);
+    const po = poResult.rows[0];
 
-    console.log('Vendor information:', {
-      name: req.body.vendor_name || (req.body.vendor && req.body.vendor.name) || 'Unknown Vendor',
-      email: req.body.vendor_email || (req.body.vendor && req.body.vendor.email) || '',
-      contact: req.body.contact_person || (req.body.vendor && req.body.vendor.contactPerson) || '',
-      phone: req.body.phone_number || (req.body.vendor && req.body.vendor.phone) || ''
-    });
-
-    console.log('Executing order insert with values:', orderValues);
-    const orderResult = await client.query(insertOrderQuery, orderValues);
-    const purchaseOrder = orderResult.rows[0];
-
-    // Insert the items if provided
-    if (req.body.items && req.body.items.length > 0) {
-      console.log(`Processing ${req.body.items.length} items for order ${purchaseOrder.id}`);
-      
-      for (const item of req.body.items) {
-        console.log('Processing item:', item);
-        
-        // For integer item_id, extract numeric part or use null
-        let itemId = null;
-        if (item.id || item.item_id) {
-          const rawItemId = item.id || item.item_id;
-          
-          if (itemIdType === 'integer') {
-            // If item_id is integer type, try to extract numeric part
-            const numericMatch = String(rawItemId).match(/\d+/);
-            itemId = numericMatch ? parseInt(numericMatch[0]) : null;
-          } else {
-            // Otherwise use as is (for varchar/text columns)
-            itemId = String(rawItemId);
-          }
-        }
-        
-        const insertItemQuery = `
-          INSERT INTO order_items (
-            order_id,
-            item_type,
-            item_id,
-            quantity,
-            unit_price,
-            total_price,
-            notes
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-        `;
-
-        const itemValues = [
-          purchaseOrder.id,
-          item.type || item.item_type || 'product',
-          itemId,
-          parseInt(item.quantity) || 0,
-          parseFloat(item.price || item.unit_price) || 0,
-          parseFloat((item.quantity || 0) * (item.price || item.unit_price || 0)) || 0,
-          item.description || item.notes || ''
-        ];
-
-        console.log('Inserting item with values:', itemValues);
-        await client.query(insertItemQuery, itemValues);
+    // Insert items (ensure description is present)
+    if (Array.isArray(items) && items.length > 0) {
+      for (const item of items) {
+        await pool.query(
+          'INSERT INTO order_items (order_id, name, quantity, unit_price, description, product_link) VALUES ($1,$2,$3,$4,$5,$6)',
+          [po.id, item.name, item.quantity, item.unit_price, item.description || '', item.productLink || null]
+        );
       }
     }
 
-    await client.query('COMMIT');
-
-    // Safely emit socket events with proper error handling
-    try {
-      if (socketIO && typeof socketIO.getIO === 'function') {
-        // Emit socket event for admin notification
-        socketIO.getIO().emit('po_approval_requested', {
-          poId: purchaseOrder.id,
-          poNumber: purchaseOrder.order_number,
-          vendorName: req.body.vendor_name || (req.body.vendor && req.body.vendor.name) || 'Unknown Vendor',
-          vendorEmail: req.body.vendor_email || (req.body.vendor && req.body.vendor.email) || '',
-          requestedBy: 'System',
-          requestDate: new Date().toISOString(),
-          total: parseFloat(purchaseOrder.total_amount || 0).toFixed(2),
-          items: req.body.items || []
-        });
-        
-        // Also emit a 'new_po' event for real-time updates in the PO list
-        socketIO.getIO().emit('new_po', {
-          id: purchaseOrder.id,
-          poNumber: purchaseOrder.order_number,
-          supplier: req.body.vendor_name || (req.body.vendor && req.body.vendor.name) || 'Unknown Vendor',
-          vendor: {
-            name: req.body.vendor_name || (req.body.vendor && req.body.vendor.name) || 'Unknown Vendor',
-            email: req.body.vendor_email || (req.body.vendor && req.body.vendor.email) || ''
-          },
-          date: new Date().toISOString().split('T')[0],
-          createdAt: new Date().toISOString(),
-          total: parseFloat(purchaseOrder.total_amount || 0),
-          totalAmount: parseFloat(purchaseOrder.total_amount || 0),
-          status: 'pending',
-          hasInvoice: false
-        });
-      }
-    } catch (socketError) {
-      // Log the error but don't fail the request
-      console.warn('Socket notification failed:', socketError.message);
-      // Continue with the request even if socket notification fails
-    }
-
-    res.status(201).json({
-      message: 'Purchase order created successfully',
-      purchaseOrder,
-      orderNumberChanged: orderNumber !== (req.body.order_number || req.body.poNumber)
-    });
-
+    res.status(201).json(po);
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error creating purchase order:', {
-      message: error.message,
-      stack: error.stack,
-      code: error.code,
-      detail: error.detail,
-      body: JSON.stringify(req.body)
-    });
-    
-    res.status(500).json({
-      message: 'Error creating purchase order',
-      error: error.message,
-      detail: error.detail || 'No additional details available'
-    });
+    console.error('Error creating purchase order:', error);
+    res.status(500).json({ message: 'Failed to create purchase order', error: error.message });
   } finally {
     client.release();
   }
 });
 
 // Add a new route to get the PDF for a purchase order
-router.get('/purchase-orders/:id/pdf', async (req, res) => {
+router.get('/:id/pdf', async (req, res) => {
     try {
+        // FIXED: Use correct column name 'order_number' instead of 'po_number'
         const result = await pool.query(
             'SELECT pdf_path, order_number FROM purchase_orders WHERE id = $1',
             [req.params.id]
@@ -1225,7 +1101,7 @@ router.delete('/purchase-orders/:id', async (req, res) => {
 });
 
 // Diagnostic endpoint to check database schema
-router.get('/purchase-orders/check-schema', async (req, res) => {
+router.get('/check-schema', async (req, res) => {
     try {
         console.log('Checking database schema');
         
@@ -1292,7 +1168,7 @@ router.get('/purchase-orders/check-schema', async (req, res) => {
 });
 
 // Add route to send PO email with PDF
-router.post('/purchase-orders/send-email', async (req, res) => {
+router.post('/send-email', async (req, res) => {
     try {
         console.log('\n📧 PURCHASE ORDER EMAIL REQUEST 📧');
         console.log('----------------------------------');

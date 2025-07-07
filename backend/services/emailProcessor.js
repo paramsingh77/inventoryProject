@@ -57,27 +57,54 @@ class EmailProcessor {
 
   initializeImap() {
     try {
-      this.imap = new Imap({
+      const imapConfig = {
         user: process.env.IMAP_USER,
         password: process.env.IMAP_PASSWORD,
         host: process.env.IMAP_HOST,
-        port: process.env.IMAP_PORT || 993,
-        tls: process.env.IMAP_TLS === 'true',
-        tlsOptions: { rejectUnauthorized: false }
+        port: parseInt(process.env.IMAP_PORT || '993', 10),
+        tls: true,
+        tlsOptions: {
+          rejectUnauthorized: true,
+          servername: process.env.IMAP_HOST
+        },
+        keepalive: {
+          interval: 10000, // 10 seconds
+          idleTimeout: 300000, // 5 minutes
+          forceNoop: true
+        },
+        authTimeout: 30000, // 30 seconds
+        connTimeout: 30000, // 30 seconds
+      };
+
+      logger.info('Initializing IMAP client with config:', {
+        user: imapConfig.user,
+        host: imapConfig.host,
+        port: imapConfig.port,
+        tls: imapConfig.tls
       });
+
+      this.imap = new Imap(imapConfig);
 
       // Set up event handlers
       this.imap.on('error', (err) => {
         logger.error('IMAP connection error:', err);
+        // Try to reconnect on error after a delay
+        setTimeout(() => {
+          if (!this.imap || this.imap.state === 'disconnected') {
+            logger.info('Attempting to reconnect after error...');
+            this.initializeImap();
+          }
+        }, 60000); // Wait 1 minute before reconnecting
       });
 
       this.imap.on('end', () => {
         logger.info('IMAP connection ended');
       });
 
-      logger.info('IMAP client initialized');
+      logger.info('IMAP client initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize IMAP client:', error);
+      throw error; // Propagate the error up
     }
   }
 
@@ -118,19 +145,31 @@ class EmailProcessor {
   async checkEmails() {
     return new Promise((resolve, reject) => {
       try {
+        logger.info('Attempting to connect to IMAP server...');
+        logger.debug('IMAP Config:', {
+          user: process.env.IMAP_USER,
+          host: process.env.IMAP_HOST,
+          port: process.env.IMAP_PORT,
+          tls: process.env.IMAP_TLS
+        });
+        
         this.imap.connect();
         
         this.imap.once('ready', () => {
+          logger.info('IMAP connection established successfully');
           this.imap.openBox('INBOX', false, (err, box) => {
             if (err) {
+              logger.error('Failed to open INBOX:', err);
               this.imap.end();
               return reject(err);
             }
             
+            logger.info('INBOX opened successfully');
             // Search for unread emails
             const searchCriteria = ['UNSEEN'];
             this.imap.search(searchCriteria, (err, results) => {
               if (err) {
+                logger.error('Failed to search for unread emails:', err);
                 this.imap.end();
                 return reject(err);
               }
@@ -147,6 +186,7 @@ class EmailProcessor {
               const fetch = this.imap.fetch(results, { bodies: '', markSeen: true });
               
               fetch.on('message', (msg, seqno) => {
+                logger.info(`Processing email #${seqno}`);
                 this.processEmail(msg, seqno);
               });
               
@@ -157,7 +197,7 @@ class EmailProcessor {
               });
               
               fetch.once('end', () => {
-                logger.info('Done fetching emails');
+                logger.info('Done fetching all emails');
                 this.imap.end();
                 resolve();
               });
@@ -166,21 +206,30 @@ class EmailProcessor {
         });
         
         this.imap.once('error', (err) => {
-          logger.error('IMAP connection error during check:', err);
+          logger.error('IMAP connection error during check:', err, {
+            stack: err.stack,
+            code: err.code,
+            source: err.source
+          });
           reject(err);
         });
         
         this.imap.once('end', () => {
-          logger.info('IMAP connection ended');
+          logger.info('IMAP connection ended normally');
         });
       } catch (error) {
-        logger.error('Error connecting to IMAP server:', error);
+        logger.error('Error in checkEmails:', error, {
+          stack: error.stack,
+          code: error.code,
+          source: error.source
+        });
         reject(error);
       }
     });
   }
 
   processEmail(msg, seqno) {
+    console.log(`Starting to process email #${seqno}`);
     const emailData = {
       seqno,
       attachments: [],
@@ -189,13 +238,15 @@ class EmailProcessor {
     };
     
     msg.on('body', (stream) => {
+      console.log(`Parsing email body for #${seqno}`);
       simpleParser(stream, async (err, parsed) => {
         if (err) {
-          logger.error(`Error parsing email #${seqno}:`, err);
+          console.error(`Error parsing email #${seqno}:`, err);
           return;
         }
         
         try {
+          console.log(`Successfully parsed email #${seqno}`);
           // Store basic email info
           emailData.id = parsed.messageId;
           emailData.from = parsed.from.text;
@@ -204,70 +255,67 @@ class EmailProcessor {
           emailData.text = parsed.text;
           emailData.html = parsed.html;
           
+          console.log(`Email details:`, {
+            id: emailData.id,
+            from: emailData.from,
+            subject: emailData.subject,
+            date: emailData.date
+          });
+          
           // Skip if we've already processed this email
           if (this.processedEmails.has(emailData.id)) {
-            logger.info(`Email ${emailData.id} already processed, skipping`);
+            console.log(`Email ${emailData.id} already processed, skipping`);
             return;
           }
           
           // Extract PO numbers from subject and body
           emailData.poNumbers = this.extractPONumbers(parsed.subject + ' ' + parsed.text);
+          console.log(`Found PO numbers:`, emailData.poNumbers);
           
           if (emailData.poNumbers.length === 0) {
-            logger.info(`No PO numbers found in email #${seqno}`);
+            console.log(`No PO numbers found in email #${seqno}`);
             return;
           }
           
-          logger.info(`Found PO numbers in email #${seqno}:`, emailData.poNumbers);
-          
           // Extract status updates from email body
           emailData.statusUpdates = this.extractStatusUpdates(parsed.text);
-          
-          // Process attachments
-          if (parsed.attachments && parsed.attachments.length > 0) {
-            for (const attachment of parsed.attachments) {
-              const attachmentInfo = {
-                filename: attachment.filename,
-                contentType: attachment.contentType,
-                size: attachment.size,
-                content: attachment.content
-              };
-              
-              emailData.attachments.push(attachmentInfo);
-              
-              // If it's a PDF, try to extract invoice data
-              if (this.isPdfInvoice(attachment.filename)) {
-                try {
-                  const invoiceData = await this.extractInvoiceData(attachment.content);
-                  attachmentInfo.invoiceData = invoiceData;
-                } catch (error) {
-                  logger.error(`Error extracting invoice data from ${attachment.filename}:`, error);
-                }
-              }
-            }
-          }
+          console.log(`Found status updates:`, emailData.statusUpdates);
           
           // Process each PO number found in the email
           for (const poNumber of emailData.poNumbers) {
+            console.log(`Processing PO number: ${poNumber}`);
             await this.processPurchaseOrder(poNumber, emailData);
           }
           
           // Mark as processed
           this.processedEmails.add(emailData.id);
+          console.log(`Email ${emailData.id} marked as processed`);
           
         } catch (error) {
-          logger.error(`Error processing email #${seqno}:`, error);
+          console.error(`Error processing email #${seqno}:`, error);
         }
       });
+    });
+
+    msg.once('error', err => {
+      console.error(`Error in message event for #${seqno}:`, err);
+    });
+
+    msg.once('end', () => {
+      console.log(`Finished processing message #${seqno}`);
     });
   }
 
   extractPONumbers(text) {
+    console.log('Extracting PO numbers from text:', text);
+    console.log('Using regex pattern:', config.poNumberRegex);
     const matches = text.match(config.poNumberRegex) || [];
+    console.log('Found PO numbers:', matches);
     return [...new Set(matches)]; // Remove duplicates
   }
 
   extractStatusUpdates(text) {
+    console.log('Extracting status updates from text:', text);
     const statusUpdates = [];
     const lowerText = text.toLowerCase();
     
@@ -275,6 +323,7 @@ class EmailProcessor {
     for (const [status, keywords] of Object.entries(config.statusKeywords)) {
       for (const keyword of keywords) {
         if (lowerText.includes(keyword.toLowerCase())) {
+          console.log(`Found status keyword "${keyword}" for status "${status}"`);
           statusUpdates.push({
             status,
             keyword,
@@ -285,6 +334,7 @@ class EmailProcessor {
       }
     }
     
+    console.log('Extracted status updates:', statusUpdates);
     return statusUpdates;
   }
 

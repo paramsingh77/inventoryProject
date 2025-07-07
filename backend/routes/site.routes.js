@@ -404,7 +404,7 @@ router.get('/:siteName/orders', async (req, res) => {
     const siteId = siteResult.rows[0].id;
     console.log(`Found site ID: ${siteId}`);
     
-    // Get orders for this site with optimized query
+    // FIXED: Use correct column name 'order_number' instead of 'po_number'
     const result = await client.query(
       `SELECT 
         po.id, 
@@ -424,6 +424,7 @@ router.get('/:siteName/orders', async (req, res) => {
         po.tracking_number,
         po.expected_delivery,
         po.actual_delivery,
+        COALESCE(po.email_sent_count, 0) as email_sent_count,
         (
           SELECT json_agg(
             json_build_object(
@@ -487,16 +488,18 @@ router.post('/:siteName/orders', async (req, res) => {
     // Start transaction
     await client.query('BEGIN');
     
-    // Insert order with site information
+    // FIXED: Include both po_number and order_number columns to satisfy database constraints
     const result = await client.query(
       `INSERT INTO purchase_orders (
-        order_number, vendor_name, vendor_email, 
+        po_number, order_number, vendor_name, vendor_email, 
         total_amount, status, site_id, site_name,
         notes, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *`,
+      // FIXED: Include both po_number and order_number values to satisfy database constraints
       [
-        orderData.poNumber, 
+        orderData.poNumber,  // po_number
+        orderData.poNumber,  // order_number (same value for both columns)
         orderData.vendor?.name || orderData.vendorName || 'Unknown Vendor', 
         orderData.vendor?.email || orderData.vendorEmail || null, 
         orderData.totalAmount || 0,

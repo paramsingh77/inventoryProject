@@ -6,7 +6,9 @@ module.exports = {
   init: (server) => {
     io = socketIO(server, {
       cors: {
-        origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+        origin: process.env.NODE_ENV === 'development'
+          ? 'http://localhost:3000'
+          : [process.env.FRONTEND_URL, 'https://' + process.env.FRONTEND_URL],
         methods: ['GET', 'POST'],
         credentials: true
       }

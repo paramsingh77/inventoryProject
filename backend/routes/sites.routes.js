@@ -87,9 +87,22 @@ router.get('/orders', async (req, res) => {
     
     const siteNames = sitesResult.rows.map(row => row.name);
     
-    // Query orders across all sites
+    // Query orders across all sites with additional fields and supplier join
     const options = {
-      fields: ['id', 'order_number', 'vendor_name', 'status', 'total_amount', 'order_date'],
+      fields: [
+        'id', 
+        'order_number', 
+        'vendor_name', 
+        'status', 
+        'total_amount', 
+        'order_date',
+        'expected_delivery',
+        'actual_delivery',
+        'phone_number',
+        'vendor_email',
+        'contact_person',
+        'supplier_id'
+      ],
       order: ['order_date', 'DESC'],
       limit: req.query.limit ? parseInt(req.query.limit) : null
     };
@@ -111,21 +124,300 @@ router.get('/orders', async (req, res) => {
       console.warn('Some site queries failed:', result.errors);
     }
     
-    res.json(result.rows);
+    // Get supplier information for purchase orders that have supplier_id
+    const purchaseOrdersWithSuppliers = await Promise.all(
+      result.rows.map(async (order) => {
+        if (order.supplier_id) {
+          try {
+            const supplierResult = await executeQuery(
+              'SELECT name, email, phone, address, contact_person FROM suppliers WHERE id = $1',
+              [order.supplier_id],
+              { source: 'supplier-lookup', logResults: false }
+            );
+            
+            if (supplierResult.rows.length > 0) {
+              const supplier = supplierResult.rows[0];
+              return {
+                ...order,
+                vendor_address: supplier.address || null,
+                vendor_phone: order.phone_number || supplier.phone || null,
+                vendor_email: order.vendor_email || supplier.email || null,
+                contact_person: order.contact_person || supplier.contact_person || null,
+                supplier: {
+                  id: order.supplier_id,
+                  name: supplier.name,
+                  email: supplier.email,
+                  phone: supplier.phone,
+                  address: supplier.address,
+                  contact_person: supplier.contact_person
+                }
+              };
+            }
+          } catch (error) {
+            console.warn(`Failed to fetch supplier info for supplier_id ${order.supplier_id}:`, error.message);
+          }
+        }
+        
+        // Return order with available fields if no supplier or supplier lookup failed
+        return {
+          ...order,
+          vendor_address: null,
+          vendor_phone: order.phone_number || null,
+          vendor_email: order.vendor_email || null,
+          contact_person: order.contact_person || null,
+          supplier: null
+        };
+      })
+    );
+    
+    res.json(purchaseOrdersWithSuppliers);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // Add route for creating a site-specific order
+// router.post('/:siteName/orders', async (req, res) => {
+//   const { siteName } = req.params;
+//   const client = await pool.connect();
+  
+//   console.log('🔴 [SITES_ROUTES] PO creation request received:', {
+//     siteName: siteName,
+//     body: req.body,
+//     timestamp: new Date().toISOString()
+//   });
+
+//   try {
+//     // Get site_id from site name
+//     console.log('🔴 [SITES_ROUTES] Looking up site_id for site name:', siteName);
+//     const siteResult = await client.query(
+//       'SELECT id FROM sites WHERE name = $1',
+//       [siteName]
+//     );
+
+//     if (siteResult.rows.length === 0) {
+//       console.error('❌ [SITES_ROUTES] Site not found in database:', siteName);
+//       return res.status(404).json({ error: 'Site not found' });
+//     }
+
+//     const siteId = siteResult.rows[0].id;
+//     console.log('🔴 [SITES_ROUTES] Found site_id:', {
+//       siteName: siteName,
+//       siteId: siteId,
+//       timestamp: new Date().toISOString()
+//     });
+
+//     // FIXED: Backend validation for required fields (site-specific PO)
+//     const vendorName = req.body.vendor?.name || req.body.vendorName;
+//     const totalAmount = parseFloat(req.body.total_amount || req.body.totalAmount || 0);
+//     const items = req.body.items;
+
+//     if (!vendorName || vendorName.trim() === '') {
+//       return res.status(400).json({ message: 'Vendor name is required.' });
+//     }
+//     if (!Array.isArray(items) || items.length === 0) {
+//       return res.status(400).json({ message: 'At least one order item is required.' });
+//     }
+//     console.log('🔍 Debug - Total amount validation:', {
+//       totalAmount,
+//       isNaN: isNaN(totalAmount),
+//       isGreaterThanZero: totalAmount > 0,
+//       rawTotalAmount: req.body.total_amount || req.body.totalAmount,
+//       bodyKeys: Object.keys(req.body)
+//     });
+    
+//     // if (isNaN(totalAmount) || totalAmount <= 0) {
+//     //   return res.status(400).json({ 
+//     //     // message: 'Total amount must be greater than zero.',
+//     //     debug: {
+//     //       received: req.body.total_amount || req.body.totalAmount,
+//     //       parsed: totalAmount,
+//     //       isNaN: isNaN(totalAmount)
+//     //     }
+//     //   });
+//     // }
+
+//     console.log('Creating site-specific order for:', req.params.siteName);
+//     console.log('Request body:', req.body);
+    
+//     // Start transaction
+//     await client.query('BEGIN');
+    
+//     console.log('🔴 [SITES_ROUTES] About to insert PO with values:', {
+//       poNumber: req.body.poNumber,
+//       supplierId: req.body.supplierId || null,
+//       vendorName: vendorName,
+//       vendorEmail: req.body.vendor?.email || req.body.vendorEmail,
+//       totalAmount: totalAmount,
+//       status: req.body.status || 'pending',
+//       siteId: siteId,
+//       timestamp: new Date().toISOString()
+//     });
+
+//     const result = await client.query(
+//       `INSERT INTO purchase_orders (
+//         po_number, order_number, supplier_id, vendor_name, vendor_email, total_amount, 
+//         status, site_id, created_at, updated_at
+//       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+//       RETURNING *`,
+//       [
+//         req.body.poNumber,  // po_number
+//         req.body.poNumber,  // order_number (same value for both columns)
+//         req.body.supplierId || null, 
+//         vendorName, 
+//         req.body.vendor?.email || req.body.vendorEmail, 
+//         totalAmount,
+//         req.body.status || 'pending',
+//         siteId
+//       ]
+//     );
+
+//     console.log('🔴 [SITES_ROUTES] PO inserted successfully:', {
+//       poId: result.rows[0].id,
+//       poNumber: result.rows[0].po_number,
+//       siteId: result.rows[0].site_id,
+//       timestamp: new Date().toISOString()
+//     });
+    
+//     // If order has items, check the order_items table structure before inserting
+//     if (req.body.items && req.body.items.length > 0) {
+//       // First check what columns actually exist in the order_items table
+//       const columnsCheck = await client.query(`
+//         SELECT column_name 
+//         FROM information_schema.columns 
+//         WHERE table_name = 'order_items'
+//       `);
+      
+//       const columnNames = columnsCheck.rows.map(row => row.column_name);
+//       console.log('Order items columns:', columnNames);
+      
+//       // Determine the correct column names based on what exists
+//       let nameColumn = 'name'; // Default
+//       if (columnNames.includes('name')) {
+//         nameColumn = 'name';
+//       } else if (columnNames.includes('product_name')) {
+//         nameColumn = 'product_name';
+//       } else if (columnNames.includes('item_name')) {
+//         nameColumn = 'item_name'; 
+//       }
+      
+//       // Similarly determine other column names
+//       let priceColumn = columnNames.includes('unit_price') ? 'unit_price' : 'price';
+      
+//       for (const item of req.body.items) {
+//         // Build a dynamic query based on available columns
+//         let columns = ['order_id'];
+//         let placeholders = ['$1'];
+//         let values = [result.rows[0].id];
+//         let paramIndex = 2;
+        
+//         // Add name column if it exists
+//         if (columnNames.includes(nameColumn)) {
+//           columns.push(nameColumn);
+//           placeholders.push(`$${paramIndex}`);
+//           values.push(item.name);
+//           paramIndex++;
+//         }
+        
+//         // Add quantity column if it exists
+//         if (columnNames.includes('quantity')) {
+//           columns.push('quantity');
+//           placeholders.push(`$${paramIndex}`);
+//           values.push(item.quantity);
+//           paramIndex++;
+//         }
+        
+//         // Add price column if it exists
+//         if (columnNames.includes(priceColumn)) {
+//           columns.push(priceColumn);
+//           placeholders.push(`$${paramIndex}`);
+//           values.push(item.unit_price || item.price || 0);
+//           paramIndex++;
+//         }
+        
+//         // Add description column if it exists
+//         if (columnNames.includes('description')) {
+//           columns.push('description');
+//           placeholders.push(`$${paramIndex}`);
+//           values.push(item.description || '');
+//           paramIndex++;
+//         }
+        
+//         // Add product_link column if it exists
+//         if (columnNames.includes('product_link')) {
+//           columns.push('product_link');
+//           placeholders.push(`$${paramIndex}`);
+//           values.push(item.productLink || null);
+//           paramIndex++;
+//         }
+        
+//         // Build and execute the query
+//         const insertQuery = `
+//           INSERT INTO order_items (${columns.join(', ')})
+//           VALUES (${placeholders.join(', ')})
+//         `;
+        
+//         console.log('Inserting item with query:', insertQuery);
+//         console.log('Values:', values);
+        
+//         await client.query(insertQuery, values);
+//       }
+//     }
+    
+//     // Commit transaction
+//     await client.query('COMMIT');
+    
+//     res.status(201).json(result.rows[0]);
+//   } catch (error) {
+//     // Rollback in case of error
+//     await client.query('ROLLBACK');
+    
+//     console.error('Error creating order:', error);
+//     res.status(500).json({ 
+//       error: 'Failed to create order', 
+//       message: error.message 
+//     });
+//   } finally {
+//     client.release();
+//   }
+// });
+
 router.post('/:siteName/orders', async (req, res) => {
-  console.log('Creating site-specific order for:', req.params.siteName);
-  console.log('Request body:', req.body);
-  const client = await pool.connect();
+  console.log('🔵 [SITES_ROUTES] POST /:siteName/orders request received:', {
+    siteName: req.params.siteName,
+    body: req.body,
+    query: req.query,
+    timestamp: new Date().toISOString()
+  });
+  
+  // FIXED: Backend validation for required fields (site-specific PO)
+  const vendorName = req.body.vendor?.name || req.body.vendorName;
+  const totalAmount = parseFloat(req.body.totalAmount || 0);
+  const items = req.body.items;
+
+  if (!vendorName || vendorName.trim() === '') {
+    return res.status(400).json({ message: 'Vendor name is required.' });
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ message: 'At least one order item is required.' });
+  }
+  // if (isNaN(totalAmount) || totalAmount <= 0) {
+  //   return res.status(400).json({ message: 'Total amount must be greater than zero.' });
+  // }
+
+        const client = await pool.connect();
   
   try {
     const { siteName } = req.params;
     const orderData = req.body;
+    
+    console.log('Creating site-specific order for:', req.params.siteName);
+    console.log('Request body:', req.body);
+    console.log('🔵 [SITES_ROUTES] PO Number from request:', {
+      poNumber: orderData.poNumber,
+      type: typeof orderData.poNumber,
+      timestamp: new Date().toISOString()
+    });
     
     // Get site_id from site name
     const siteResult = await client.query(
@@ -139,22 +431,41 @@ router.post('/:siteName/orders', async (req, res) => {
     
     const siteId = siteResult.rows[0].id;
     
+    console.log('🔵 [SITES_ROUTES] Found site_id:', {
+      siteName: siteName,
+      siteId: siteId,
+      timestamp: new Date().toISOString()
+    });
+    
     // Start transaction
     await client.query('BEGIN');
     
-    // Insert order with site_id
+    // Insert order with site_id - include both po_number and order_number columns
+    console.log('🔵 [SITES_ROUTES] About to insert PO with values:', {
+      poNumber: orderData.poNumber,
+      orderNumber: orderData.poNumber,
+      supplierId: orderData.supplierId || null,
+      vendorName: vendorName,
+      vendorEmail: orderData.vendor?.email || orderData.vendorEmail,
+      totalAmount: totalAmount,
+      status: orderData.status || 'pending',
+      siteId: siteId,
+      timestamp: new Date().toISOString()
+    });
+    
     const result = await client.query(
       `INSERT INTO purchase_orders (
-        order_number, supplier_id, vendor_name, vendor_email, total_amount, 
+        po_number, order_number, supplier_id, vendor_name, vendor_email, total_amount, 
         status, site_id, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *`,
       [
-        orderData.poNumber, 
+        orderData.poNumber,  // po_number
+        orderData.poNumber,  // order_number (same value for both columns)
         orderData.supplierId || null, 
-        orderData.vendor?.name || orderData.vendorName, 
+        vendorName, 
         orderData.vendor?.email || orderData.vendorEmail, 
-        orderData.totalAmount || 0,
+        totalAmount,
         orderData.status || 'pending',
         siteId
       ]
@@ -224,6 +535,14 @@ router.post('/:siteName/orders', async (req, res) => {
           paramIndex++;
         }
         
+        // Add product_link column if it exists
+        if (columnNames.includes('product_link')) {
+          columns.push('product_link');
+          placeholders.push(`$${paramIndex}`);
+          values.push(item.productLink || null);
+          paramIndex++;
+        }
+        
         // Build and execute the query
         const insertQuery = `
           INSERT INTO order_items (${columns.join(', ')})
@@ -240,6 +559,13 @@ router.post('/:siteName/orders', async (req, res) => {
     // Commit transaction
     await client.query('COMMIT');
     
+    console.log('🔵 [SITES_ROUTES] PO created successfully:', {
+      poId: result.rows[0].id,
+      poNumber: result.rows[0].order_number,
+      siteId: result.rows[0].site_id,
+      timestamp: new Date().toISOString()
+    });
+    
     res.status(201).json(result.rows[0]);
   } catch (error) {
     // Rollback in case of error
@@ -254,6 +580,7 @@ router.post('/:siteName/orders', async (req, res) => {
     client.release();
   }
 });
+
 
 // Update order status for a specific site
 router.patch('/sites/:siteName/orders/:orderId/status', async (req, res) => {
@@ -387,32 +714,106 @@ router.get('/:siteName/orders', async (req, res) => {
     const orderItemsExists = tableCheck.rows[0].exists;
     console.log('Order items table exists:', orderItemsExists);
     
-    // Basic query without the problematic subquery
-    const result = await client.query(
-      `SELECT 
-        po.id, 
-        po.order_number, 
-        po.vendor_name, 
-        po.vendor_email,
-        po.total_amount, 
-        po.status, 
-        po.site_id,
-        s.name as site_name,
-        po.created_at, 
-        po.updated_at,
-        po.notes,
-        po.has_invoice,
-        po.invoice_received_date,
-        po.shipping_status,
-        po.tracking_number,
-        po.expected_delivery,
-        po.actual_delivery
-      FROM purchase_orders po
-      LEFT JOIN sites s ON po.site_id = s.id
-      WHERE po.site_id = $1
-      ORDER BY po.created_at DESC`,
-      [siteId]
-    );
+    // Get orders for this site with optimized query
+    let result;
+    try {
+      // FIXED: Use correct column name 'order_number' instead of 'po_number'
+      result = await client.query(
+        `SELECT 
+          po.id, 
+          po.order_number, 
+          po.vendor_name, 
+          po.vendor_email,
+          po.contact_person,
+          po.phone_number,
+          po.total_amount, 
+          po.status, 
+          po.site_id,
+          s.name as site_name,
+          po.created_at, 
+          po.updated_at,
+          po.notes,
+          po.has_invoice,
+          po.invoice_received_date,
+          po.shipping_status,
+          po.tracking_number,
+          po.expected_delivery,
+          po.actual_delivery,
+          COALESCE(po.email_sent_count, 0) as email_sent_count,
+          -- Join with suppliers table to get complete vendor information
+          sup.name as supplier_name,
+          sup.email as supplier_email,
+          sup.contact_person as supplier_contact_person,
+          sup.phone as supplier_phone,
+          sup.address as supplier_address,
+          sup.website as supplier_website,
+          (
+            SELECT json_agg(
+              json_build_object(
+                'id', oi.id,
+                'name', oi.name,
+                'quantity', oi.quantity,
+                'price', oi.unit_price,
+                'description', oi.notes,
+                'productLink', oi.product_link
+              )
+            )
+            FROM order_items oi
+            WHERE oi.order_id = po.id
+          ) as items
+        FROM purchase_orders po
+        LEFT JOIN sites s ON po.site_id = s.id
+        LEFT JOIN suppliers sup ON po.supplier_id = sup.id
+        WHERE po.site_id = $1
+        ORDER BY po.created_at DESC`,
+        [siteId]
+      );
+    } catch (joinError) {
+      console.warn('Supplier join failed, falling back to basic query:', joinError.message);
+      // FIXED: Use correct column name 'order_number' instead of 'po_number' in fallback query
+      result = await client.query(
+        `SELECT 
+          po.id, 
+          po.order_number, 
+          po.vendor_name, 
+          po.vendor_email,
+          po.contact_person,
+          po.phone_number,
+          po.total_amount, 
+          po.status, 
+          po.site_id,
+          s.name as site_name,
+          po.created_at, 
+          po.updated_at,
+          po.notes,
+          po.has_invoice,
+          po.invoice_received_date,
+          po.shipping_status,
+          po.tracking_number,
+          po.expected_delivery,
+          po.actual_delivery,
+          COALESCE(po.email_sent_count, 0) as email_sent_count,
+          (
+            SELECT json_agg(
+              json_build_object(
+                'id', oi.id,
+                'name', oi.name,
+                'quantity', oi.quantity,
+                'price', oi.unit_price,
+                'description', oi.notes,
+                'productLink', oi.product_link
+              )
+            )
+            FROM order_items oi
+            WHERE oi.order_id = po.id
+          ) as items
+        FROM purchase_orders po
+        LEFT JOIN sites s ON po.site_id = s.id
+        WHERE po.site_id = $1
+        ORDER BY po.created_at DESC`,
+        [siteId]
+      );
+    }
     
     console.log(`Found ${result.rows.length} orders for site ${siteName}`);
     

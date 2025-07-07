@@ -37,12 +37,28 @@ pool.on('error', (err, client) => {
 
 // Add connection validation
 pool.on('connect', (client) => {
+    // FIXED: Prevent double-release by using a flag to track release status
+    let isReleased = false;
+    
     client.on('error', (err) => {
         console.error('Database client error:', err);
-        if (err.code === 'EADDRNOTAVAIL') {
+        if (err.code === 'EADDRNOTAVAIL' && !isReleased) {
+            isReleased = true;
             client.release(true);
         }
     });
+    
+    // Override the release method to prevent double release
+    const originalRelease = client.release;
+    client.release = function(err) {
+        if (!isReleased) {
+            isReleased = true;
+            return originalRelease.call(this, err);
+        } else {
+            console.warn('Prevented attempt to release a client that was already released');
+            return false;
+        }
+    };
 });
 
 // Improved connection health check
@@ -261,6 +277,7 @@ async function initializeSchema() {
                     order_id INTEGER REFERENCES purchase_orders(id),
                     item_type VARCHAR(50),
                     item_id INTEGER,
+                    name VARCHAR(255),
                     quantity INTEGER,
                     unit_price DECIMAL(10,2),
                     total_price DECIMAL(10,2),

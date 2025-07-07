@@ -37,8 +37,8 @@ app.use(fileUpload({
 }));
 
 // Check if vendor routes are properly registered
-const supplierRoutes = require('./routes/supplier.routes.js');
-app.use('/api/suppliers', supplierRoutes);
+// const supplierRoutes = require('./routes/supplier.routes.js');
+// app.use('/api/suppliers', supplierRoutes);
 
 // Add these middleware registrations after creating the app
 app.use(express.urlencoded({ extended: true }));
@@ -47,7 +47,22 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api', trackingRoutes);
 app.use('/api/email', emailProcessingRoutes);
 
-// Mount routes
+// Add site routes FIRST (more specific routes should come before general ones)
+const sitesRoutes = require('./routes/sites.routes.js');
+app.use('/api/sites', sitesRoutes);
+
+// Add device routes - make sure this is BEFORE any catch-all routes
+const deviceRoutes = require('./routes/device.routes');
+app.use('/api/devices', deviceRoutes);
+
+// Add user routes
+app.use('/api/users', require('./routes/user.routes'));
+
+// Add this to your existing app.js
+const invoiceRoutes = require('./routes/invoice.routes');
+app.use('/api', invoiceRoutes);
+
+// Mount purchase-orders routes AFTER more specific routes
 app.use('/api/purchase-orders', require('./routes/purchase-orders.routes.js'));
 
 // Test route
@@ -55,38 +70,25 @@ app.get('/test', (req, res) => {
   res.json({ message: 'Server is running' });
 });
 
-// Add this to your existing app.js
-const invoiceRoutes = require('./routes/invoice.routes');
-app.use('/api', invoiceRoutes);
-
 // Also add the email scanner service
 // const emailInvoiceScanner = require('./services/emailInvoiceScanner');
 // const invoiceScannerService = emailInvoiceScanner.startEmailScanner();
 
-// Add device routes - make sure this is BEFORE any catch-all routes
-const deviceRoutes = require('./routes/device.routes');
-app.use('/api/devices', deviceRoutes);
-
 // Add this for debugging
 app.use((req, res, next) => {
-  console.log('Request URL:', req.method, req.url);
+  console.log('🔍 [APP] Request received:', req.method, req.url, 'at', new Date().toISOString());
   next();
 });
 
 // Add this after mounting all routes
-console.log('Registered routes:');
+console.log('🔍 [APP] Registered routes:');
 app._router.stack.forEach(function(r){
   if (r.route && r.route.path){
-    console.log(r.route.stack[0].method.toUpperCase() + ' ' + r.route.path);
+    console.log('  ' + r.route.stack[0].method.toUpperCase() + ' ' + r.route.path);
+  } else if (r.name === 'router') {
+    console.log('  Router middleware:', r.regexp);
   }
 });
-
-// Add user routes
-app.use('/api/users', require('./routes/user.routes'));
-
-// Add site routes
-const sitesRoutes = require('./routes/sites.routes.js');
-app.use('/api/sites', sitesRoutes);
 
 // Add a simple test endpoint
 app.get('/api/test', (req, res) => {

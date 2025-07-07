@@ -36,8 +36,12 @@ async function generatePurchaseOrderPdf(po) {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
 
       // Company Logo
-      const logoPath = path.join(__dirname, '../../src/images/image copy.png');
-      doc.image(logoPath, 50, 45, { width: 80, height: 80 });
+      const logoPath = path.join(__dirname, '../public/images/image.png');
+      doc.image(logoPath, {
+        fit: [100, 100],
+        align: 'center',
+        valign: 'center'
+      });
 
       // Company Information - Left aligned under logo
       doc.font('Helvetica').fontSize(11);

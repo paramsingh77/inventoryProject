@@ -9,19 +9,27 @@ const supplierController = require('../controllers/supplier.controller');
 const auth = require('../middleware/auth');
 const { spawn } = require('child_process');
 const path = require('path');
-const pool = require('../database/db');
+const { pool, safeQuery } = require('../database/db');
 
 // Apply authentication middleware to all supplier routes
 router.use(auth);
 
-// GET all suppliers
-router.get('/suppliers', supplierController.getAllSuppliers);
+// FIXED: Reorder routes to avoid conflicts - specific routes first, then parameterized routes
 
-// GET supplier statistics (this must come before /:id routes to avoid parameter confusion)
-router.get('/suppliers/stats', supplierController.getSupplierStats);
+// GET all suppliers (must come before /:id routes)
+router.get('/', supplierController.getAllSuppliers);
 
-// POST sync vendors to suppliers
-router.post('/suppliers/sync-from-inventory', async (req, res) => {
+// POST create new supplier (must come before /:id routes)
+router.post('/', supplierController.createSupplier);
+
+// GET supplier statistics (must come before /:id routes)
+router.get('/stats', supplierController.getSupplierStats);
+
+// GET supplier by name (must come before /:id routes)
+router.get('/by-name/:name', supplierController.getSupplierByName);
+
+// POST sync vendors to suppliers (must come before /:id routes)
+router.post('/sync-from-inventory', async (req, res) => {
   try {
     console.log('Starting vendor-supplier synchronization process...');
     
@@ -71,55 +79,22 @@ router.post('/suppliers/sync-from-inventory', async (req, res) => {
   }
 });
 
-// Sync endpoint - Directly run the synchronization script
-router.post('/suppliers/sync', auth, async (req, res) => {
-  try {
-    const syncVendorsToSuppliers = require('../scripts/sync-vendors-to-suppliers');
-    
-    console.log('Starting vendor to supplier synchronization...');
-    
-    // Run the synchronization directly instead of spawning a child process
-    const result = await syncVendorsToSuppliers();
-    
-    if (result.success) {
-      console.log('Synchronization completed successfully');
-      return res.status(200).json({ 
-        message: 'Suppliers synchronized successfully from inventory', 
-        details: result.message 
-      });
-    } else {
-      console.error('Synchronization failed:', result.error);
-      return res.status(500).json({ 
-        error: 'Failed to sync suppliers from inventory', 
-        details: result.error
-      });
-    }
-  } catch (error) {
-    console.error('Sync error:', error);
-    return res.status(500).json({ 
-      error: 'Failed to sync suppliers from inventory', 
-      details: error.message 
-    });
-  }
-});
 
-// GET supplier by ID
-router.get('/suppliers/:id', supplierController.getSupplierById);
 
-// POST create new supplier
-router.post('/suppliers', supplierController.createSupplier);
+// GET supplier products (must come before /:id routes)
+router.get('/:id/products', supplierController.getSupplierProducts);
 
-// PUT update supplier
-router.put('/suppliers/:id', supplierController.updateSupplier);
+// POST add product to supplier (must come before /:id routes)
+router.post('/:id/products', supplierController.addSupplierProduct);
 
-// DELETE supplier (soft delete)
-router.delete('/suppliers/:id', supplierController.deleteSupplier);
+// GET supplier by ID (parameterized route - comes after specific routes)
+router.get('/:id', supplierController.getSupplierById);
 
-// GET supplier products
-router.get('/suppliers/:id/products', supplierController.getSupplierProducts);
+// PUT update supplier (parameterized route)
+router.put('/:id', supplierController.updateSupplier);
 
-// POST add product to supplier
-router.post('/suppliers/:id/products', supplierController.addSupplierProduct);
+// DELETE supplier (soft delete) (parameterized route)
+router.delete('/:id', supplierController.deleteSupplier);
 
 // Simplified sync endpoint
 router.post('/sync', auth, async (req, res) => {
@@ -129,7 +104,7 @@ router.post('/sync', auth, async (req, res) => {
     // Check the database connection first
     console.log('Testing database connection...');
     const testQuery = 'SELECT NOW()';
-    await pool.query(testQuery);
+    await safeQuery(testQuery);
     console.log('Database connection successful');
     
     // 1. Get unique vendors from device_inventory
@@ -144,7 +119,7 @@ router.post('/sync', auth, async (req, res) => {
       ORDER BY vendor
     `;
     
-    const { rows: vendors } = await pool.query(vendorsQuery);
+    const { rows: vendors } = await safeQuery(vendorsQuery);
     console.log(`Found ${vendors.length} vendors in device inventory`);
     
     // 2. For each vendor, check if it exists in suppliers table
@@ -158,7 +133,7 @@ router.post('/sync', auth, async (req, res) => {
         WHERE LOWER(name) = LOWER($1)
       `;
       
-      const { rows: existing } = await pool.query(checkQuery, [vendor.supplier_name]);
+      const { rows: existing } = await safeQuery(checkQuery, [vendor.supplier_name]);
       
       if (existing.length > 0) {
         // Update existing supplier
@@ -190,7 +165,7 @@ router.post('/sync', auth, async (req, res) => {
           notes: `Auto-imported from device inventory. Found ${vendor.device_count} devices.`
         });
         
-        await pool.query(insertQuery, [vendor.supplier_name, contactInfo]);
+        await safeQuery(insertQuery, [vendor.supplier_name, contactInfo]);
         newCount++;
       }
     }
@@ -217,5 +192,4 @@ router.post('/sync', auth, async (req, res) => {
     });
   }
 });
-
 module.exports = router; 

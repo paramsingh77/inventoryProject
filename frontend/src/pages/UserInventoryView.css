@@ -1,0 +1,347 @@
+/* Excel-like table styling */
+.table-container {
+  width: 100%;
+  background-color: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.table-container.dark-mode {
+  background-color: #343a40;
+  color: #fff;
+}
+
+.excel-like-container {
+  width: 100%;
+  overflow-x: auto;
+  max-height: calc(100vh - 300px);
+  position: relative;
+}
+
+.inventory-table {
+  width: 100%;
+  min-width: 1500px; /* Ensure the table has a minimum width */
+  margin-bottom: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.inventory-table th,
+.inventory-table td {
+  white-space: nowrap;
+  padding: 12px 16px;
+  vertical-align: middle;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.inventory-table.table-dark th,
+.inventory-table.table-dark td {
+  border-color: #495057;
+}
+
+.inventory-table th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+  color: #495057;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.inventory-table.table-dark th {
+  background-color: #2c3136;
+  color: #e9ecef;
+}
+
+.inventory-table tr:hover {
+  background-color: rgba(0, 123, 255, 0.05);
+}
+
+.inventory-table.table-dark tr:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Define specific column widths */
+.inventory-table th:nth-child(1),
+.inventory-table td:nth-child(1) {
+  width: 150px;
+}
+
+.inventory-table th:nth-child(2),
+.inventory-table td:nth-child(2) {
+  width: 180px;
+}
+
+.inventory-table th:nth-child(3),
+.inventory-table td:nth-child(3) {
+  width: 200px;
+}
+
+.inventory-table th:nth-child(4),
+.inventory-table td:nth-child(4) {
+  width: 150px;
+}
+
+.inventory-table th:nth-child(5),
+.inventory-table td:nth-child(5) {
+  width: 150px;
+}
+
+.inventory-table th:nth-child(6),
+.inventory-table td:nth-child(6) {
+  width: 150px;
+}
+
+.inventory-table th:nth-child(7),
+.inventory-table td:nth-child(7) {
+  width: 150px;
+}
+
+.inventory-table th:nth-child(8),
+.inventory-table td:nth-child(8) {
+  width: 180px;
+}
+
+.inventory-table th:nth-child(9),
+.inventory-table td:nth-child(9) {
+  width: 180px;
+}
+
+.inventory-table th:nth-child(10),
+.inventory-table td:nth-child(10) {
+  width: 180px;
+}
+
+.inventory-table th:nth-child(11),
+.inventory-table td:nth-child(11) {
+  width: 200px;
+}
+
+/* Sticky header styling */
+.sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* Add subtle grid lines like Excel */
+.inventory-table th, 
+.inventory-table td {
+  border-right: 1px solid #e9ecef;
+}
+
+.inventory-table.table-dark th,
+.inventory-table.table-dark td {
+  border-right: 1px solid #495057;
+}
+
+.inventory-table th:last-child,
+.inventory-table td:last-child {
+  border-right: none;
+}
+
+/* Add some animation for the scrolling experience */
+.excel-like-container::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.excel-like-container::-webkit-scrollbar-thumb {
+  background: #cdcdcd;
+  border-radius: 4px;
+}
+
+.excel-like-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.dark-mode .excel-like-container::-webkit-scrollbar-thumb {
+  background: #495057;
+}
+
+.dark-mode .excel-like-container::-webkit-scrollbar-track {
+  background: #343a40;
+}
+
+/* Status indicator */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot.status-active {
+  background-color: #28a745;
+}
+
+.status-dot.status-inactive {
+  background-color: #6c757d;
+}
+
+.status-dot.status-warning {
+  background-color: #ffc107;
+}
+
+/* Style for the site icon */
+.site-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background-color: rgba(0, 123, 255, 0.1);
+  color: #0b5ed7;
+  border-radius: 6px;
+}
+
+/* Filter buttons styles */
+.filter-buttons .btn {
+  font-size: 0.875rem;
+  padding: 0.25rem 0.75rem;
+}
+
+/* Search box styling - Fixed alignment */
+.search-container {
+  position: relative;
+  width: 240px;
+}
+
+.search-input {
+  padding-right: 30px;
+  height: 31px;
+}
+
+.search-icon {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #adb5bd;
+  pointer-events: none;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f5f5f5;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #ccc;
+} 
+
+/* Analytics modal styles */
+.analytics-modal {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.analytics-tabs .nav-link {
+  border-radius: 8px;
+  padding: 0.75rem 1.25rem;
+  border: 1px solid var(--bs-border-color);
+  background: transparent;
+  color: var(--bs-body-color);
+}
+
+.analytics-tabs .nav-link.active {
+  background: var(--bs-primary);
+  border-color: var(--bs-primary);
+  color: white;
+}
+
+.tab-title {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.tab-desc {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.site-card {
+  transition: transform 0.2s;
+}
+
+.site-card:hover {
+  transform: translateY(-2px);
+}
+
+.stats-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(0, 123, 255, 0.1);
+  color: #0d6efd;
+}
+
+.device-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.stat-item {
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  color: #6c757d;
+  margin-bottom: 0.25rem;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.type-icon {
+  color: #0d6efd;
+}
+
+.dark-mode .analytics-modal .modal-content {
+  background-color: #1a1a1a;
+  color: #e0e0e0;
+}
+
+.dark-mode .site-card {
+  background-color: #242424;
+}
+
+.dark-mode .stat-item {
+  background-color: #2d2d2d;
+}
+
+.dark-mode .analytics-tabs .nav-link {
+  border-color: #2d2d2d;
+  color: #e0e0e0;
+}
+
+.nav-link.active,
+.nav-pills .nav-link.active,
+.nav-tabs .nav-link.active {
+  background: #f3f4f6 !important;
+  border-color: #d1d5db !important;
+  color: #222 !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.04) !important;
+}

@@ -221,6 +221,160 @@ router.get('/vendors', async (req, res) => {
     }
 });
 
+// FIXED: New endpoint that combines inventory vendors and suppliers for PO creation
+router.get('/vendors/combined', async (req, res) => {
+    try {
+        console.log('Fetching combined vendors and suppliers for PO creation...');
+        
+        const client = await pool.connect();
+        try {
+            const combinedVendors = [];
+            const vendorMap = new Map(); // To track unique vendors by name
+            
+            // 1. Get vendors from device inventory
+            console.log('Fetching vendors from device inventory...');
+            const inventoryVendorQuery = `
+                SELECT DISTINCT 
+                    vendor as name,
+                    COUNT(*) as device_count,
+                    STRING_AGG(DISTINCT device_type, ', ') as device_types
+                FROM device_inventory 
+                WHERE vendor IS NOT NULL AND vendor != ''
+                GROUP BY vendor
+                ORDER BY vendor
+            `;
+            
+            const inventoryResult = await client.query(inventoryVendorQuery);
+            console.log(`Found ${inventoryResult.rows.length} vendors from inventory`);
+            
+            // Add inventory vendors to combined list
+            inventoryResult.rows.forEach((vendor, index) => {
+                const vendorId = `inventory-${index + 1}`;
+                vendorMap.set(vendor.name.toLowerCase(), {
+                    id: vendorId,
+                    name: vendor.name,
+                    source: 'inventory',
+                    device_count: vendor.device_count,
+                    device_types: vendor.device_types,
+                    email: `sales@${vendor.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
+                    phone: 'N/A',
+                    contact_person: '',
+                    address: 'N/A'
+                });
+            });
+            
+            // 2. Get suppliers from suppliers table
+            console.log('Fetching suppliers from suppliers table...');
+            const suppliersQuery = `
+                SELECT 
+                    id,
+                    name,
+                    contact_person,
+                    email,
+                    phone,
+                    address,
+                    website,
+                    status,
+                    category,
+                    notes
+                FROM suppliers 
+                WHERE status = 'active'
+                ORDER BY name
+            `;
+            
+            const suppliersResult = await client.query(suppliersQuery);
+            console.log(`Found ${suppliersResult.rows.length} suppliers`);
+            
+            // Add suppliers to combined list (may override inventory vendors with more complete data)
+            suppliersResult.rows.forEach(supplier => {
+                const existingVendor = vendorMap.get(supplier.name.toLowerCase());
+                
+                if (existingVendor) {
+                    // Update existing vendor with supplier data (more complete)
+                    existingVendor.id = `supplier-${supplier.id}`;
+                    existingVendor.source = 'both';
+                    existingVendor.contact_person = supplier.contact_person || existingVendor.contact_person;
+                    existingVendor.email = supplier.email || existingVendor.email;
+                    existingVendor.phone = supplier.phone || existingVendor.phone;
+                    existingVendor.address = supplier.address || existingVendor.address;
+                    existingVendor.website = supplier.website;
+                    existingVendor.category = supplier.category;
+                    existingVendor.notes = supplier.notes;
+                } else {
+                    // Add new supplier
+                    vendorMap.set(supplier.name.toLowerCase(), {
+                        id: `supplier-${supplier.id}`,
+                        name: supplier.name,
+                        source: 'suppliers',
+                        device_count: 0,
+                        device_types: '',
+                        contact_person: supplier.contact_person || '',
+                        email: supplier.email || `sales@${supplier.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
+                        phone: supplier.phone || 'N/A',
+                        address: supplier.address || 'N/A',
+                        website: supplier.website,
+                        category: supplier.category,
+                        notes: supplier.notes
+                    });
+                }
+            });
+            
+            // Convert map to array and sort by name
+            const finalVendors = Array.from(vendorMap.values()).sort((a, b) => 
+                a.name.localeCompare(b.name)
+            );
+            
+            console.log(`Returning ${finalVendors.length} combined vendors/suppliers`);
+            res.json(finalVendors);
+            
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('Error fetching combined vendors:', error);
+        
+        // Fallback to basic vendor list if there's an error
+        const fallbackVendors = [
+            { 
+                id: 'fallback-1',
+                name: 'Dell Technologies',
+                source: 'fallback',
+                device_count: 0,
+                device_types: '',
+                email: 'sales@dell.com',
+                phone: 'N/A',
+                contact_person: '',
+                address: 'N/A'
+            },
+            { 
+                id: 'fallback-2',
+                name: 'HP Inc.',
+                source: 'fallback',
+                device_count: 0,
+                device_types: '',
+                email: 'sales@hp.com',
+                phone: 'N/A',
+                contact_person: '',
+                address: 'N/A'
+            },
+            { 
+                id: 'fallback-3',
+                name: 'Lenovo Group Limited',
+                source: 'fallback',
+                device_count: 0,
+                device_types: '',
+                email: 'sales@lenovo.com',
+                phone: 'N/A',
+                contact_person: '',
+                address: 'N/A'
+            }
+        ];
+        
+        console.log('Error occurred, returning fallback vendor list');
+        res.json(fallbackVendors);
+    }
+});
+
 // Route to get devices by vendor name
 router.get('/vendor/:vendorName', async (req, res) => {
     try {
@@ -665,6 +819,791 @@ router.get('/site-stats/:siteName', async (req, res) => {
       recent: 0,
       pending: 0
     });
+  }
+});
+
+// Add a route to add a single device
+router.post('/', async (req, res) => {
+  let client;
+  try {
+    console.log('Request body:', req.body);
+    console.log('Request headers:', req.headers);
+    
+    const {
+      site_name,
+      device_hostname,
+      device_description,
+      last_user,
+      last_seen,
+      device_type,
+      device_model,
+      operating_system,
+      serial_number,
+      device_cpu,
+      mac_addresses
+    } = req.body;
+
+    // Check required fields
+    if (!device_hostname || !serial_number || !site_name) {
+      console.log('Missing required fields:', { device_hostname, serial_number, site_name });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Device hostname, serial number, and site name are required' 
+      });
+    }
+
+    // Log formatted mac_addresses to debug
+    console.log('MAC addresses before processing:', mac_addresses);
+    console.log('MAC addresses type:', typeof mac_addresses, Array.isArray(mac_addresses));
+
+    // Extract vendor from device model
+    const vendor = device_model ? 
+      device_model.split(' ')[0].replace(/[^a-zA-Z]/g, '') : 
+      'Unknown';
+      
+    // Handle last_seen field - convert "Currently Online" to current timestamp
+    let formattedLastSeen;
+    if (!last_seen || last_seen === 'Currently Online') {
+      formattedLastSeen = new Date().toISOString();
+    } else {
+      // Try to parse as a date, if it fails, use current date
+      try {
+        const parsedDate = new Date(last_seen);
+        formattedLastSeen = parsedDate.toString() !== 'Invalid Date' 
+          ? parsedDate.toISOString() 
+          : new Date().toISOString();
+      } catch (e) {
+        console.error('Error parsing last_seen date, using current timestamp:', e);
+        formattedLastSeen = new Date().toISOString();
+      }
+    }
+    
+    console.log('Formatted last_seen:', formattedLastSeen);
+
+    client = await pool.connect();
+
+    // First ensure the main table exists
+    const createTableQuery = `
+      CREATE TABLE IF NOT EXISTS device_inventory (
+        id SERIAL PRIMARY KEY,
+        site_name VARCHAR(255),
+        device_hostname VARCHAR(255),
+        device_description TEXT,
+        last_user VARCHAR(255),
+        last_seen TIMESTAMP,
+        device_type VARCHAR(100),
+        device_model VARCHAR(255),
+        operating_system VARCHAR(255),
+        serial_number VARCHAR(255),
+        device_cpu VARCHAR(255),
+        mac_addresses TEXT[],
+        vendor VARCHAR(255),
+        status VARCHAR(50) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    await client.query(createTableQuery);
+
+    // Check if a device with the same serial number already exists in main table
+    const checkQuery = `SELECT * FROM device_inventory WHERE serial_number = $1`;
+    const checkResult = await client.query(checkQuery, [serial_number]);
+    
+    if (checkResult.rows.length > 0) {
+      console.log('Device with serial number already exists in main table:', serial_number);
+      return res.status(409).json({
+        success: false,
+        message: 'A device with this serial number already exists'
+      });
+    }
+
+    // Format site name for table name
+    const formattedSiteName = site_name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const siteTableName = `${formattedSiteName}_device_inventory`;
+    
+    console.log(`Creating/checking site-specific table: ${siteTableName}`);
+
+    // Create site-specific table if it doesn't exist
+    const createSiteTableQuery = `
+      CREATE TABLE IF NOT EXISTS ${siteTableName} (
+        id SERIAL PRIMARY KEY,
+        site_name VARCHAR(255),
+        device_hostname VARCHAR(255),
+        device_description TEXT,
+        last_user VARCHAR(255),
+        last_seen TIMESTAMP,
+        device_type VARCHAR(100),
+        device_model VARCHAR(255),
+        operating_system VARCHAR(255),
+        serial_number VARCHAR(255),
+        device_cpu VARCHAR(255),
+        mac_addresses TEXT[],
+        vendor VARCHAR(255),
+        status VARCHAR(50) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+    
+    await client.query(createSiteTableQuery);
+    
+    // Check if device exists in site-specific table
+    const checkSiteQuery = `SELECT * FROM ${siteTableName} WHERE serial_number = $1`;
+    const checkSiteResult = await client.query(checkSiteQuery, [serial_number]);
+    
+    if (checkSiteResult.rows.length > 0) {
+      console.log('Device with serial number already exists in site table:', serial_number);
+      return res.status(409).json({
+        success: false,
+        message: 'A device with this serial number already exists at this site'
+      });
+    }
+
+    // Begin transaction
+    await client.query('BEGIN');
+
+    // Insert into the main device_inventory table
+    const insertMainQuery = `
+      INSERT INTO device_inventory (
+        site_name,
+        device_hostname,
+        device_description,
+        last_user,
+        last_seen,
+        device_type,
+        device_model,
+        operating_system,
+        serial_number,
+        device_cpu,
+        mac_addresses,
+        vendor
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING *
+    `;
+
+    const values = [
+      site_name,
+      device_hostname,
+      device_description || '',
+      last_user || '',
+      formattedLastSeen,
+      device_type || '',
+      device_model || '',
+      operating_system || '',
+      serial_number,
+      device_cpu || '',
+      mac_addresses || [],
+      vendor
+    ];
+
+    const mainResult = await client.query(insertMainQuery, values);
+    console.log('Device inserted into main table:', mainResult.rows[0]);
+    
+    // Insert into site-specific table
+    const insertSiteQuery = `
+      INSERT INTO ${siteTableName} (
+        site_name,
+        device_hostname,
+        device_description,
+        last_user,
+        last_seen,
+        device_type,
+        device_model,
+        operating_system,
+        serial_number,
+        device_cpu,
+        mac_addresses,
+        vendor
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING *
+    `;
+    
+    const siteResult = await client.query(insertSiteQuery, values);
+    console.log('Device inserted into site table:', siteResult.rows[0]);
+    
+    // Commit transaction
+    await client.query('COMMIT');
+    
+    res.status(201).json({
+      success: true,
+      message: 'Device added successfully',
+      device: siteResult.rows[0]
+    });
+  } catch (error) {
+    // Rollback in case of error
+    if (client) {
+      await client.query('ROLLBACK').catch(err => 
+        console.error('Error during rollback:', err)
+      );
+    }
+    
+    console.error('Error adding device:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error adding device',
+      error: error.message 
+    });
+  } finally {
+    if (client) {
+      try {
+        await client.release();
+      } catch (releaseError) {
+        console.error('Error releasing client:', releaseError);
+      }
+    }
+  }
+});
+
+// Get all unique device types
+router.get('/types', async (req, res) => {
+  let client;
+  try {
+    client = await pool.connect();
+    
+    const query = `
+      SELECT DISTINCT device_type 
+      FROM device_inventory 
+      WHERE device_type IS NOT NULL AND device_type != '' 
+      ORDER BY device_type
+    `;
+    
+    const result = await client.query(query);
+    
+    // Extract the device types from the result
+    const deviceTypes = result.rows.map(row => row.device_type);
+    
+    res.json(deviceTypes);
+  } catch (error) {
+    console.error('Error fetching device types:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching device types',
+      error: error.message 
+    });
+  } finally {
+    if (client) {
+      try {
+        await client.release();
+      } catch (releaseError) {
+        console.error('Error releasing client:', releaseError);
+      }
+    }
+  }
+});
+
+// Get all unique OS versions
+router.get('/os-versions', async (req, res) => {
+  let client;
+  try {
+    client = await pool.connect();
+    
+    const query = `
+      SELECT DISTINCT operating_system 
+      FROM device_inventory 
+      WHERE operating_system IS NOT NULL AND operating_system != '' 
+      ORDER BY operating_system
+    `;
+    
+    const result = await client.query(query);
+    
+    // Extract the OS versions from the result
+    const osVersions = result.rows.map(row => row.operating_system);
+    
+    res.json(osVersions);
+  } catch (error) {
+    console.error('Error fetching OS versions:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching OS versions',
+      error: error.message 
+    });
+  } finally {
+    if (client) {
+      try {
+        await client.release();
+      } catch (releaseError) {
+        console.error('Error releasing client:', releaseError);
+      }
+    }
+  }
+});
+
+// Update a device
+router.put('/:id', async (req, res) => {
+  let client;
+  try {
+    const { id } = req.params;
+    console.log('Updating device with ID:', id);
+    console.log('Request body:', req.body);
+    
+    const {
+      site_name,
+      device_hostname,
+      device_description,
+      last_user,
+      last_seen,
+      device_type,
+      device_model,
+      operating_system,
+      serial_number,
+      device_cpu,
+      mac_addresses
+    } = req.body;
+
+    // Check required fields
+    if (!device_hostname || !serial_number || !site_name) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Device hostname, serial number, and site name are required' 
+      });
+    }
+
+    // Extract vendor from device model
+    const vendor = device_model ? 
+      device_model.split(' ')[0].replace(/[^a-zA-Z]/g, '') : 
+      'Unknown';
+      
+    // Handle last_seen field - convert "Currently Online" to current timestamp
+    let formattedLastSeen;
+    if (!last_seen || last_seen === 'Currently Online') {
+      formattedLastSeen = new Date().toISOString();
+    } else {
+      // Try to parse as a date, if it fails, use current date
+      try {
+        const parsedDate = new Date(last_seen);
+        formattedLastSeen = parsedDate.toString() !== 'Invalid Date' 
+          ? parsedDate.toISOString() 
+          : new Date().toISOString();
+      } catch (e) {
+        console.error('Error parsing last_seen date, using current timestamp:', e);
+        formattedLastSeen = new Date().toISOString();
+      }
+    }
+    
+    console.log('Formatted last_seen:', formattedLastSeen);
+
+    client = await pool.connect();
+    
+    // Begin transaction
+    await client.query('BEGIN');
+
+    // *** Enhanced device lookup logic ***
+    
+    // Try looking up device by ID first
+    console.log(`Trying to find device with ID: ${id}`);
+    const checkByIdQuery = `SELECT * FROM device_inventory WHERE id = $1`;
+    const deviceByIdResult = await client.query(checkByIdQuery, [id]);
+    console.log(`Results from ID lookup: ${deviceByIdResult.rows.length} rows`);
+    
+    // If not found, try looking up by serial number as fallback
+    let checkResult = deviceByIdResult;
+    if (deviceByIdResult.rows.length === 0 && serial_number) {
+      console.log(`Device not found by ID, trying with serial number: ${serial_number}`);
+      const checkBySerialQuery = `SELECT * FROM device_inventory WHERE serial_number = $1`;
+      const deviceBySerialResult = await client.query(checkBySerialQuery, [serial_number]);
+      console.log(`Results from serial number lookup: ${deviceBySerialResult.rows.length} rows`);
+      checkResult = deviceBySerialResult;
+    }
+    
+    // If still not found, return 404
+    if (checkResult.rows.length === 0) {
+      console.log('Device not found by either ID or serial number');
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Device not found'
+      });
+    }
+    
+    const deviceToUpdate = checkResult.rows[0];
+    console.log('Found device to update:', deviceToUpdate);
+    
+    // Get the original site name from the database
+    const originalSiteName = deviceToUpdate.site_name;
+    console.log('Original site name:', originalSiteName);
+    
+    // Format site names for table names
+    const formattedOriginalSiteName = originalSiteName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const originalSiteTable = `${formattedOriginalSiteName}_device_inventory`;
+    
+    const formattedNewSiteName = site_name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const newSiteTable = `${formattedNewSiteName}_device_inventory`;
+    
+    console.log('Original site table:', originalSiteTable);
+    console.log('New site table:', newSiteTable);
+    
+    // Check if the site has changed
+    const siteChanged = originalSiteName !== site_name;
+    
+    // Update the device in the main table
+    const updateMainQuery = `
+      UPDATE device_inventory SET
+        site_name = $1,
+        device_hostname = $2,
+        device_description = $3,
+        last_user = $4,
+        last_seen = $5,
+        device_type = $6,
+        device_model = $7,
+        operating_system = $8,
+        serial_number = $9,
+        device_cpu = $10,
+        mac_addresses = $11,
+        vendor = $12,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $13
+      RETURNING *
+    `;
+
+    const values = [
+      site_name,
+      device_hostname,
+      device_description || '',
+      last_user || '',
+      formattedLastSeen,
+      device_type || '',
+      device_model || '',
+      operating_system || '',
+      serial_number,
+      device_cpu || '',
+      mac_addresses || [],
+      vendor,
+      deviceToUpdate.id // Use the device ID we found
+    ];
+
+    const mainResult = await client.query(updateMainQuery, values);
+    console.log('Device updated in main table:', mainResult.rows[0]);
+    
+    // If site has changed, we need to move the device to the new site table
+    if (siteChanged) {
+      console.log(`Site has changed from ${originalSiteName} to ${site_name}`);
+      
+      // First, ensure the new site table exists
+      const createNewSiteTableQuery = `
+        CREATE TABLE IF NOT EXISTS ${newSiteTable} (
+          id SERIAL PRIMARY KEY,
+          site_name VARCHAR(255),
+          device_hostname VARCHAR(255),
+          device_description TEXT,
+          last_user VARCHAR(255),
+          last_seen TIMESTAMP,
+          device_type VARCHAR(100),
+          device_model VARCHAR(255),
+          operating_system VARCHAR(255),
+          serial_number VARCHAR(255),
+          device_cpu VARCHAR(255),
+          mac_addresses TEXT[],
+          vendor VARCHAR(255),
+          status VARCHAR(50) DEFAULT 'active',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+      
+      await client.query(createNewSiteTableQuery);
+      
+      // Check if device with same serial exists in new site table
+      const checkNewSiteQuery = `SELECT * FROM ${newSiteTable} WHERE serial_number = $1 AND id != $2`;
+      const checkNewSiteResult = await client.query(checkNewSiteQuery, [serial_number, deviceToUpdate.id]);
+      
+      if (checkNewSiteResult.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          success: false,
+          message: 'A device with this serial number already exists at the destination site'
+        });
+      }
+      
+      // Check if original site table exists
+      const checkOriginalTableQuery = `
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_name = $1
+        );
+      `;
+      
+      const originalTableExists = await client.query(checkOriginalTableQuery, [originalSiteTable]);
+      
+      if (originalTableExists.rows[0].exists) {
+        // Check if device exists in original site table
+        const checkOriginalSiteQuery = `SELECT * FROM ${originalSiteTable} WHERE serial_number = $1`;
+        const checkOriginalSiteResult = await client.query(checkOriginalSiteQuery, [deviceToUpdate.serial_number]);
+        
+        if (checkOriginalSiteResult.rows.length > 0) {
+          // Delete from original site table
+          const deleteOriginalQuery = `DELETE FROM ${originalSiteTable} WHERE serial_number = $1`;
+          await client.query(deleteOriginalQuery, [deviceToUpdate.serial_number]);
+          console.log('Device removed from original site table');
+        }
+      }
+      
+      // Insert into new site table
+      const insertNewSiteQuery = `
+        INSERT INTO ${newSiteTable} (
+          site_name,
+          device_hostname,
+          device_description,
+          last_user,
+          last_seen,
+          device_type,
+          device_model,
+          operating_system,
+          serial_number,
+          device_cpu,
+          mac_addresses,
+          vendor,
+          status,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING *
+      `;
+      
+      const newSiteValues = [
+        ...values.slice(0, 12),
+        mainResult.rows[0].status || 'active',
+        mainResult.rows[0].created_at || new Date()
+      ];
+      
+      const newSiteResult = await client.query(insertNewSiteQuery, newSiteValues);
+      console.log('Device inserted into new site table:', newSiteResult.rows[0]);
+    } else {
+      // If site hasn't changed, just update the existing site table
+      console.log('Site has not changed, updating site-specific table');
+      
+      // Check if site table exists
+      const checkSiteTableQuery = `
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_name = $1
+        );
+      `;
+      
+      const siteTableExists = await client.query(checkSiteTableQuery, [originalSiteTable]);
+      
+      if (siteTableExists.rows[0].exists) {
+        // Update in site table
+        const updateSiteQuery = `
+          UPDATE ${originalSiteTable} SET
+            device_hostname = $1,
+            device_description = $2,
+            last_user = $3,
+            last_seen = $4,
+            device_type = $5,
+            device_model = $6,
+            operating_system = $7,
+            serial_number = $8,
+            device_cpu = $9,
+            mac_addresses = $10,
+            vendor = $11,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE serial_number = $12
+          RETURNING *
+        `;
+        
+        const siteValues = [
+          device_hostname,
+          device_description || '',
+          last_user || '',
+          formattedLastSeen,
+          device_type || '',
+          device_model || '',
+          operating_system || '',
+          serial_number,
+          device_cpu || '',
+          mac_addresses || [],
+          vendor,
+          serial_number
+        ];
+        
+        const siteResult = await client.query(updateSiteQuery, siteValues);
+        console.log('Device updated in site table:', siteResult.rows[0]);
+      } else {
+        // Create the site table and insert the device
+        console.log(`Site table ${originalSiteTable} doesn't exist, creating it`);
+        
+        const createSiteTableQuery = `
+          CREATE TABLE IF NOT EXISTS ${originalSiteTable} (
+            id SERIAL PRIMARY KEY,
+            site_name VARCHAR(255),
+            device_hostname VARCHAR(255),
+            device_description TEXT,
+            last_user VARCHAR(255),
+            last_seen TIMESTAMP,
+            device_type VARCHAR(100),
+            device_model VARCHAR(255),
+            operating_system VARCHAR(255),
+            serial_number VARCHAR(255),
+            device_cpu VARCHAR(255),
+            mac_addresses TEXT[],
+            vendor VARCHAR(255),
+            status VARCHAR(50) DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `;
+        
+        await client.query(createSiteTableQuery);
+        
+        // Insert into site table
+        const insertSiteQuery = `
+          INSERT INTO ${originalSiteTable} (
+            site_name,
+            device_hostname,
+            device_description,
+            last_user,
+            last_seen,
+            device_type,
+            device_model,
+            operating_system,
+            serial_number,
+            device_cpu,
+            mac_addresses,
+            vendor,
+            status,
+            created_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          RETURNING *
+        `;
+        
+        const siteValues = [
+          site_name,
+          ...values.slice(1, 5),
+          ...values.slice(5, 12),
+          mainResult.rows[0].status || 'active',
+          mainResult.rows[0].created_at || new Date()
+        ];
+        
+        const siteResult = await client.query(insertSiteQuery, siteValues);
+        console.log('Device inserted into new site table:', siteResult.rows[0]);
+      }
+    }
+    
+    // Commit transaction
+    await client.query('COMMIT');
+    
+    res.status(200).json({
+      success: true,
+      message: 'Device updated successfully',
+      device: mainResult.rows[0]
+    });
+  } catch (error) {
+    // Rollback transaction on error
+    if (client) {
+      await client.query('ROLLBACK').catch(err => 
+        console.error('Error during rollback:', err)
+      );
+    }
+    
+    console.error('Error updating device:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error updating device',
+      error: error.message 
+    });
+  } finally {
+    if (client) {
+      try {
+        await client.release();
+      } catch (releaseError) {
+        console.error('Error releasing client:', releaseError);
+      }
+    }
+  }
+});
+
+// Delete a device
+router.delete('/:id', async (req, res) => {
+  let client;
+  try {
+    const { id } = req.params;
+    
+    client = await pool.connect();
+    
+    // Begin transaction
+    await client.query('BEGIN');
+    
+    // Check if device exists in main table
+    const checkQuery = `SELECT * FROM device_inventory WHERE id = $1`;
+    const checkResult = await client.query(checkQuery, [id]);
+    
+    if (checkResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Device not found'
+      });
+    }
+    
+    const device = checkResult.rows[0];
+    console.log('Found device to delete:', device);
+    
+    // Delete from main device_inventory table
+    const deleteMainQuery = `DELETE FROM device_inventory WHERE id = $1 RETURNING *`;
+    const mainResult = await client.query(deleteMainQuery, [id]);
+    console.log('Device deleted from main table');
+    
+    // Check if site-specific table exists
+    const formattedSiteName = device.site_name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const siteTableName = `${formattedSiteName}_device_inventory`;
+    
+    const checkSiteTableQuery = `
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = $1
+      );
+    `;
+    
+    const siteTableExists = await client.query(checkSiteTableQuery, [siteTableName]);
+    
+    if (siteTableExists.rows[0].exists) {
+      // Delete from site-specific table by serial number
+      const deleteSiteQuery = `DELETE FROM ${siteTableName} WHERE serial_number = $1 RETURNING *`;
+      const siteResult = await client.query(deleteSiteQuery, [device.serial_number]);
+      
+      if (siteResult.rows.length > 0) {
+        console.log('Device deleted from site table');
+      } else {
+        console.log('Device not found in site table, continuing');
+      }
+    } else {
+      console.log(`Site table ${siteTableName} does not exist, skipping site deletion`);
+    }
+    
+    // Commit transaction
+    await client.query('COMMIT');
+    
+    res.status(200).json({
+      success: true,
+      message: 'Device deleted successfully',
+      device: mainResult.rows[0]
+    });
+  } catch (error) {
+    // Rollback transaction on error
+    if (client) {
+      await client.query('ROLLBACK').catch(err => 
+        console.error('Error during rollback:', err)
+      );
+    }
+    
+    console.error('Error deleting device:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error deleting device',
+      error: error.message 
+    });
+  } finally {
+    if (client) {
+      try {
+        await client.release();
+      } catch (releaseError) {
+        console.error('Error releasing client:', releaseError);
+      }
+    }
   }
 });
 

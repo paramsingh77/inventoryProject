@@ -1,0 +1,6 @@
+id,hostname,model,device_type,cpu,os,category
+1,srv001,PowerEdge R740,Server,Intel Xeon Gold 6248R,Windows Server 2019,Server-Physical
+5,license-srv1,License Server,License,Intel Xeon E3-1270 v6,Windows Server 2016,Server-Physical
+3,vm-web01,VMware Virtual Platform,Server,Intel(R) Xeon(R) CPU E5-2670 0 @ 2.60GHz (4 vCPUs),Ubuntu 20.04 LTS,Server-VM
+4,att-phone1,iPhone 13,Phone,Apple A15 Bionic,iOS 15,Cell-phones-ATT
+2,desktop001,OptiPlex 7080,Desktop,Intel Core i7-10700,Windows 10 Pro,Desktop
