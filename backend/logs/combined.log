@@ -14700,3 +14700,6 @@
 {"level":"info","message":"Email check completed at Mon Jul 07 2025 16:36:19 GMT-0700 (Pacific Daylight Time)","service":"email-processor","timestamp":"2025-07-07 16:36:19"}
 {"level":"info","message":"IMAP connection ended","service":"email-processor","timestamp":"2025-07-07 16:36:19"}
 {"level":"info","message":"IMAP connection ended normally","service":"email-processor","timestamp":"2025-07-07 16:36:19"}
+{"host":"imap.gmail.com","level":"info","message":"Initializing IMAP client with config:","port":993,"service":"email-processor","timestamp":"2025-07-07 16:39:32","tls":true,"user":"invoice.tester11@gmail.com"}
+{"level":"info","message":"IMAP client initialized successfully","service":"email-processor","timestamp":"2025-07-07 16:39:32"}
+{"level":"info","message":"Starting email monitoring service","service":"email-processor","timestamp":"2025-07-07 16:39:33"}
